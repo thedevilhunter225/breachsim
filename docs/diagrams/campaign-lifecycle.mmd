@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant M as Campaign Manager
+    participant API as FastAPI
+    participant PE as Policy Engine
+    participant SG as Scenario Generator
+    participant A as Admin Reviewer
+    participant W as Worker
+    participant E as Employee
+
+    M->>API: Create draft campaign
+    M->>API: Generate scenario
+    API->>PE: Validate inputs and allowed themes
+    PE-->>API: Constraints
+    API->>SG: Generate structured scenario
+    SG-->>API: Draft content + metadata
+    API->>PE: Post-generation validation
+    PE-->>API: Pass or block
+    M->>API: Submit for approval
+    A->>API: Review diff, edit, approve
+    API-->>W: Enqueue sandbox launch
+    W->>API: Create delivery attempts and tokens
+    E->>API: Open email or scan QR
+    API->>API: Track events, assign micro-training, update risk
+    A->>API: Export report and audit log

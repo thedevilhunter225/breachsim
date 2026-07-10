@@ -1,0 +1,54 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+backend/.venv/
+backend/.venv-win/
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+frontend/tsconfig.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Databases and generated runtime state
+*.db
+*.sqlite
+*.sqlite3
+backend/test.db
+backend/tests/test.db
+backend/breachsim.db
+sample_outputs/generated/
+
+# Local QA artifacts
+risk-intelligence-qa.png
+*.log
+
+# Research/reference clone, not part of BreachSim source
+_reference_gophish/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

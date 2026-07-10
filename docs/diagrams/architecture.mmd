@@ -1,0 +1,24 @@
+flowchart LR
+    A["Next.js Admin Console"] --> B["FastAPI REST API"]
+    P["Employee Portal"] --> B
+    T["Training Landing Pages"] --> B
+    B --> C["Auth + RBAC"]
+    B --> D["Policy Engine"]
+    B --> E["Scenario Generator"]
+    B --> F["Campaign Service"]
+    B --> G["Delivery Adapters"]
+    B --> H["Analytics + Risk Engine"]
+    B --> I["Audit Service"]
+    B --> J["Training Engine"]
+    D --> K["PostgreSQL"]
+    E --> K
+    F --> K
+    G --> K
+    H --> K
+    I --> K
+    J --> K
+    F --> R["Redis + RQ"]
+    R --> G
+    R --> H
+    G --> S["Sandbox Email / SMS / QR"]
+    H --> X["Reports + Dashboards"]

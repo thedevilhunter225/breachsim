@@ -1,0 +1,214 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: "Segoe UI Variable Text", "Aptos", "Segoe UI", sans-serif;
+  --font-display: "Segoe UI Variable Display", "Aptos Display", "Segoe UI", sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
+  --bg: #f4f7fb;
+  --bg-strong: #ffffff;
+  --surface: rgba(255, 255, 255, 0.94);
+  --surface-strong: rgba(255, 255, 255, 0.98);
+  --surface-dark: rgba(11, 17, 30, 0.9);
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: rgba(16, 22, 37, 0.09);
+  --line-strong: rgba(16, 22, 37, 0.18);
+  --ember: #dd6a3d;
+  --moss: #60793f;
+  --tide: #0f6c7d;
+  --warning: #c9981d;
+  --violet: #324e9e;
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-strong: 0 8px 24px rgba(15, 23, 42, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #f5f7fa;
+  color: var(--ink);
+  font-family: var(--font-sans), "Aptos", "Segoe UI Variable", sans-serif;
+  text-rendering: optimizeLegibility;
+  transition:
+    background 220ms ease,
+    color 220ms ease;
+}
+
+html[data-theme="dark"] body {
+  background: #0f172a;
+  color: #f4efe7;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(15, 108, 125, 0.16);
+  color: var(--ink);
+}
+
+.dark-login {
+  color-scheme: dark;
+}
+
+.page-shell {
+  position: relative;
+}
+
+.page-shell::before {
+  display: none;
+}
+
+html[data-theme="dark"] .page-shell::before {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+}
+
+.glass {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: var(--shadow-soft);
+}
+
+.glass-dark {
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow-soft);
+}
+
+.section-title {
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-family: var(--font-sans), sans-serif;
+  font-weight: 750;
+}
+
+.display-font {
+  font-family: var(--font-display), var(--font-sans), sans-serif;
+}
+
+.shell-ring {
+  position: relative;
+  overflow: hidden;
+}
+
+.shell-ring::after {
+  display: none;
+}
+
+input,
+select,
+textarea {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.98);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #f8fafc;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(102, 112, 133, 0.82);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: rgba(15, 108, 125, 0.28) !important;
+  box-shadow:
+    0 0 0 4px rgba(15, 108, 125, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75) !important;
+}
+
+button {
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    opacity 150ms ease,
+    background-color 150ms ease;
+}
+
+button:hover:not(:disabled) {
+  transform: none;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+th,
+td {
+  vertical-align: top;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(16, 22, 37, 0.04);
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(16, 22, 37, 0.16);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 22, 37, 0.24);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.enterprise-card {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: var(--shadow-soft);
+}
+
+.enterprise-muted-card {
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+html[data-theme="dark"] .enterprise-card,
+html[data-theme="dark"] .enterprise-muted-card {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.22);
+}

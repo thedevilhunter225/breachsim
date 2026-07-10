@@ -1,0 +1,4 @@
+occurred_at,action,resource_type,resource_id,details
+2026-03-17T09:14:00+00:00,scenario.approve,scenario,scenario-1,"{""approver"": ""Aisha Rahman""}"
+2026-03-17T09:20:00+00:00,campaign.launch_sandbox,campaign,camp-1,"{""attempt_count"": 14}"
+2026-03-17T09:24:00+00:00,policy.update,policy,policy-1,"{""second_approval_required"": true}"

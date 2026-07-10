@@ -1,0 +1,25 @@
+erDiagram
+    organizations ||--o{ departments : has
+    organizations ||--o{ users : has
+    organizations ||--o{ employees : has
+    organizations ||--o{ policies : has
+    users ||--o{ user_roles : assigned
+    roles ||--o{ user_roles : contains
+    departments ||--o{ employees : groups
+    employees ||--o{ consent_records : owns
+    employees ||--o{ context_profiles : derives
+    employees ||--o{ campaign_targets : targets
+    employees ||--o{ training_assignments : receives
+    employees ||--o{ risk_scores : scored
+    policies ||--o{ policy_versions : versions
+    scenarios ||--o{ scenario_versions : versions
+    campaigns ||--o{ campaign_targets : includes
+    campaigns ||--o{ campaign_scenarios : assigns
+    campaigns ||--o{ delivery_attempts : sends
+    campaigns ||--o{ event_logs : generates
+    delivery_attempts ||--o{ landing_tokens : issues
+    landing_tokens ||--o{ event_logs : tracks
+    training_modules ||--o{ training_assignments : maps
+    training_assignments ||--o{ training_completions : completes
+    organizations ||--o{ audit_logs : audits
+    organizations ||--o{ report_exports : exports

@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: breachsim
+      POSTGRES_USER: breachsim
+      POSTGRES_PASSWORD: breachsim
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: ${BACKEND_DATABASE_URL:-postgresql+psycopg://breachsim:breachsim@postgres:5432/breachsim}
+      REDIS_URL: ${BACKEND_REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${BACKEND_SECRET_KEY:-change-me-in-production}
+      ENCRYPTION_KEY: ${BACKEND_ENCRYPTION_KEY:-3zcD2n9il4f-aM1MAt7R9Hkg4g7H4FrJDE0ctCcf18Y=}
+      FRONTEND_BASE_URL: ${BACKEND_FRONTEND_BASE_URL:-http://localhost:3000}
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./sample_outputs:/app/sample_outputs
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  worker:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: ${BACKEND_DATABASE_URL:-postgresql+psycopg://breachsim:breachsim@postgres:5432/breachsim}
+      REDIS_URL: ${BACKEND_REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${BACKEND_SECRET_KEY:-change-me-in-production}
+      ENCRYPTION_KEY: ${BACKEND_ENCRYPTION_KEY:-3zcD2n9il4f-aM1MAt7R9Hkg4g7H4FrJDE0ctCcf18Y=}
+      FRONTEND_BASE_URL: ${BACKEND_FRONTEND_BASE_URL:-http://localhost:3000}
+    depends_on:
+      - backend
+      - redis
+    volumes:
+      - ./backend:/app
+      - ./sample_outputs:/app/sample_outputs
+    command: ["python", "-m", "app.workers.worker"]
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:

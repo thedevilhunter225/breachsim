@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "breachsim-backend"
+version = "0.1.0"
+description = "BreachSim FastAPI backend"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.14.0",
+  "cryptography>=44.0.0",
+  "email-validator>=2.2.0",
+  "fastapi>=0.116.0",
+  "httpx>=0.28.1",
+  "pydantic-settings>=2.7.1",
+  "pyjwt>=2.10.1",
+  "psycopg[binary]>=3.2.4",
+  "python-multipart>=0.0.20",
+  "qrcode[pil]>=8.0",
+  "redis>=5.2.1",
+  "rq>=2.1.0",
+  "sqlalchemy>=2.0.37",
+  "uvicorn[standard]>=0.34.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "faker>=36.1.0",
+  "pytest>=8.3.4",
+  "pytest-cov>=6.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+
