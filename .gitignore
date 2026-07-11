@@ -42,6 +42,7 @@ sample_outputs/generated/
 
 # Local QA artifacts
 risk-intelligence-qa.png
+*.zip
 *.log
 
 # Research/reference clone, not part of BreachSim source
