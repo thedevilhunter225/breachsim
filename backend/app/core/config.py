@@ -15,7 +15,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 8
     database_url: str = "sqlite:///./breachsim.db"
     redis_url: str = "redis://redis:6379/0"
-    encryption_key: str = "3zcD2n9il4f-aM1MAt7R9Hkg4g7H4FrJDE0ctCcf18Y="
+    #: Fernet key protecting integration credentials, employee phone numbers and persona
+    #: summaries at rest. Deliberately has no shipped default — see ``crypto.get_fernet``.
+    encryption_key: str | None = None
     frontend_base_url: str = "http://localhost:3000"
     cors_origins: list[str] = Field(
         default_factory=lambda: [
@@ -70,13 +72,21 @@ INSECURE_SECRET_PLACEHOLDER = "change-me-in-production"
 @lru_cache
 def get_settings() -> Settings:
     resolved = Settings()
-    if resolved.environment.lower() in {"production", "prod"} and (
+    is_production = resolved.environment.lower() in {"production", "prod"}
+    if is_production and (
         resolved.secret_key == INSECURE_SECRET_PLACEHOLDER or len(resolved.secret_key) < 32
     ):
         raise RuntimeError(
             "SECRET_KEY is unset, still the shipped placeholder, or shorter than 32 characters. "
             "Set a strong unique SECRET_KEY before running in production — tokens signed with "
             "the default secret can be forged by anyone."
+        )
+    if is_production and not resolved.encryption_key:
+        raise RuntimeError(
+            "ENCRYPTION_KEY is unset. Outside development the key is never derived, because a "
+            "derived key would be recoverable by anyone holding SECRET_KEY. Generate one with "
+            "`python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"` "
+            "and set BACKEND_ENCRYPTION_KEY before storing credentials or employee data."
         )
     return resolved
 

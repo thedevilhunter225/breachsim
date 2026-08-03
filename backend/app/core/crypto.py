@@ -10,8 +10,15 @@ from app.core.config import settings
 
 
 def get_fernet() -> Fernet:
-    key = settings.encryption_key.encode("utf-8")
-    return Fernet(key)
+    """Return the Fernet used for encrypted columns.
+
+    No key is shipped in source. When ``BACKEND_ENCRYPTION_KEY`` is unset the key is
+    derived from ``SECRET_KEY`` so local development and the test suite keep a stable
+    key across restarts without a published constant to decrypt them. ``get_settings``
+    refuses to start in production without an explicitly configured key.
+    """
+    key = settings.encryption_key or derive_static_key("column-encryption")
+    return Fernet(key.encode("utf-8"))
 
 
 def encrypt_text(value: str | None) -> str | None:

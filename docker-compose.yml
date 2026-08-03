@@ -24,7 +24,7 @@ services:
       DATABASE_URL: ${BACKEND_DATABASE_URL:-postgresql+psycopg://breachsim:breachsim@postgres:5432/breachsim}
       REDIS_URL: ${BACKEND_REDIS_URL:-redis://redis:6379/0}
       SECRET_KEY: ${BACKEND_SECRET_KEY:-change-me-in-production}
-      ENCRYPTION_KEY: ${BACKEND_ENCRYPTION_KEY:-3zcD2n9il4f-aM1MAt7R9Hkg4g7H4FrJDE0ctCcf18Y=}
+      ENCRYPTION_KEY: ${BACKEND_ENCRYPTION_KEY:-}
       FRONTEND_BASE_URL: ${BACKEND_FRONTEND_BASE_URL:-http://localhost:3000}
       VOICE_CLONE_PROVIDER: ${VOICE_CLONE_PROVIDER:-none}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
@@ -47,7 +47,7 @@ services:
       DATABASE_URL: ${BACKEND_DATABASE_URL:-postgresql+psycopg://breachsim:breachsim@postgres:5432/breachsim}
       REDIS_URL: ${BACKEND_REDIS_URL:-redis://redis:6379/0}
       SECRET_KEY: ${BACKEND_SECRET_KEY:-change-me-in-production}
-      ENCRYPTION_KEY: ${BACKEND_ENCRYPTION_KEY:-3zcD2n9il4f-aM1MAt7R9Hkg4g7H4FrJDE0ctCcf18Y=}
+      ENCRYPTION_KEY: ${BACKEND_ENCRYPTION_KEY:-}
       FRONTEND_BASE_URL: ${BACKEND_FRONTEND_BASE_URL:-http://localhost:3000}
       VOICE_CLONE_PROVIDER: ${VOICE_CLONE_PROVIDER:-none}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
