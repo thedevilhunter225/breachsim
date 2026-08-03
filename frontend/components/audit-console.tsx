@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FileDown, History } from "lucide-react";
+import Link from "next/link";
 
 import { Panel } from "@/components/panel";
 import { useSession } from "@/components/session-provider";
@@ -17,36 +19,35 @@ export function AuditConsole() {
 
   return (
     <>
-      <Panel>
-        <div className="section-title">Audit and Compliance</div>
-        <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <section className="app-surface rounded-xl p-5 md:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="display-font text-4xl font-semibold tracking-[-0.04em]">Append-only timeline of launches, approvals, edits, and configuration changes</h2>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate">
-              This page exists for accountability. Every critical action in BreachSim is written to the audit trail so an admin, reviewer, or evaluator can see what happened and who did it.
-            </p>
+            <div className="section-title">Governance evidence</div>
+            <h1 className="display-font mt-2 text-2xl font-semibold tracking-[-0.035em] text-ink">Audit trail</h1>
+            <p className="mt-1.5 text-sm text-slate">Approvals, content changes, launches and administrative activity.</p>
           </div>
-          <div className="rounded-[1.4rem] bg-sand px-4 py-3 text-sm text-slate">
-            Total entries: <span className="font-semibold text-ink">{logs.length}</span>
+          <div className="flex items-center gap-2">
+            <div className="app-secondary-button"><History size={15} /> {logs.length} entries</div>
+            <Link href="/reports" className="app-primary-button"><FileDown size={15} /> Export</Link>
           </div>
         </div>
-      </Panel>
+      </section>
 
       <Panel className="overflow-hidden p-0">
         {logs.length ? (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-white/85">
-                <tr className="text-slate">
-                  <th className="px-5 py-4">Action</th>
-                  <th className="px-5 py-4">Resource</th>
-                  <th className="px-5 py-4">Details</th>
-                  <th className="px-5 py-4">Timestamp</th>
+            <table className="data-table min-w-full text-left text-sm">
+              <thead>
+                <tr>
+                  <th className="px-5 py-3">Action</th>
+                  <th className="px-5 py-3">Resource</th>
+                  <th className="px-5 py-3">Details</th>
+                  <th className="px-5 py-3">Timestamp</th>
                 </tr>
               </thead>
               <tbody>
                 {logs.map((log) => (
-                  <tr key={log.id} className="border-t border-ink/10 bg-white/60">
+                  <tr key={log.id}>
                     <td className="px-5 py-4">
                       <div className="font-semibold text-ink">{log.action}</div>
                       <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate">{log.resource_type}</div>

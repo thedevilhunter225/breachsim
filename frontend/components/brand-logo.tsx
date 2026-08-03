@@ -1,65 +1,112 @@
 import clsx from "clsx";
 import { useId } from "react";
 
+/**
+ * The BreachSim mark: a navy-to-electric-blue shield split by a breach, with
+ * circuit traces running into the intact half.
+ */
+export function BrandShield({ className }: { className?: string }) {
+  const id = useId().replace(/:/g, "");
+  const plate = `${id}-plate`;
+  const edge = `${id}-edge`;
+  const bolt = `${id}-bolt`;
+
+  return (
+    <svg viewBox="0 0 64 64" className={clsx("h-8 w-8", className)} fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={plate} x1="10" y1="6" x2="46" y2="58" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#12305E" />
+          <stop offset="0.55" stopColor="#1B4FA0" />
+          <stop offset="1" stopColor="#2B8BFF" />
+        </linearGradient>
+        <linearGradient id={edge} x1="44" y1="8" x2="44" y2="58" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#4FA3FF" />
+          <stop offset="1" stopColor="#1E6FE0" />
+        </linearGradient>
+        <linearGradient id={bolt} x1="28" y1="24" x2="36" y2="52" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#7CC0FF" />
+          <stop offset="1" stopColor="#2B8BFF" />
+        </linearGradient>
+      </defs>
+
+      {/* Left plate — the circuit-bearing half, torn along the breach line */}
+      <path
+        d="M32 4 8 12v20c0 12.3 8.6 23.7 20.4 28l1.9-13.6-5.5-.4 6.4-10.8-6.9-1.1 7.7-9.1V4Z"
+        fill={`url(#${plate})`}
+      />
+
+      {/* Right plate — the intact edge of the shield */}
+      <path
+        d="M36 4v16.9l-4.6 9.6 6.6.9-6.9 11.4 5.2.5-1.9 21.1C46.9 59.6 56 47.5 56 34.6V12L36 4Z"
+        fill={`url(#${edge})`}
+        opacity="0.95"
+      />
+
+      {/* Breach bolt down the seam */}
+      <path
+        d="M33.4 19.5 26.6 30.9l5.6.6-5.1 9.8 5.1.5-1.6 12.6 8.1-16.4-5.4-.5 5.6-9.7-5.5-.7 1.4-7.6Z"
+        fill={`url(#${bolt})`}
+      />
+
+      {/* Circuit traces */}
+      <g stroke="#9FD4FF" strokeWidth="1.5" strokeLinecap="round" opacity="0.85">
+        <path d="M13 24h6l3-3" />
+        <path d="M13 31h9" />
+        <path d="M13 38h6l3 3" />
+      </g>
+      <g fill="#D9EEFF">
+        <circle cx="12" cy="24" r="1.9" />
+        <circle cx="12" cy="31" r="1.9" />
+        <circle cx="12" cy="38" r="1.9" />
+      </g>
+    </svg>
+  );
+}
+
 export function BrandLogo({
   compact = false,
   inverted = false,
+  tagline = "Human Risk Intelligence",
   className,
 }: {
   compact?: boolean;
   inverted?: boolean;
+  tagline?: string;
   className?: string;
 }) {
-  const id = useId().replace(/:/g, "");
-  const shieldGradient = `${id}-shield`;
-  const coreGradient = `${id}-core`;
-  const glowGradient = `${id}-glow`;
-
   return (
-    <div className={clsx("flex items-center gap-3", className)}>
-      <div className="relative grid h-12 w-12 place-items-center rounded-[1.35rem] border border-white/12 bg-[linear-gradient(180deg,rgba(11,17,30,0.94),rgba(9,21,42,0.88))] shadow-[0_18px_44px_rgba(3,12,28,0.42)]">
-        <div className="absolute inset-[5px] rounded-[1.1rem] bg-[radial-gradient(circle_at_top,rgba(112,236,255,0.2),transparent_55%),linear-gradient(180deg,rgba(17,39,68,0.85),rgba(8,18,35,0.98))]" />
-        <svg viewBox="0 0 64 64" className="relative z-10 h-8 w-8" fill="none" aria-hidden="true">
-          <defs>
-            <linearGradient id={shieldGradient} x1="32" y1="8" x2="32" y2="56" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#63E8FF" />
-              <stop offset="0.5" stopColor="#2E8BFF" />
-              <stop offset="1" stopColor="#0A2344" />
-            </linearGradient>
-            <linearGradient id={coreGradient} x1="24" y1="20" x2="41" y2="48" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#D7FFFF" />
-              <stop offset="1" stopColor="#51C9FF" />
-            </linearGradient>
-            <linearGradient id={glowGradient} x1="19" y1="15" x2="43" y2="47" gradientUnits="userSpaceOnUse">
-              <stop stopColor="rgba(255,255,255,0.88)" />
-              <stop offset="1" stopColor="rgba(255,255,255,0)" />
-            </linearGradient>
-          </defs>
-          <path
-            d="M32 6.5 49.5 13.7V27.7c0 11.2-7.1 21.5-17.5 25.5C21.6 49.2 14.5 39 14.5 27.7V13.7L32 6.5Z"
-            fill={`url(#${shieldGradient})`}
-            stroke="rgba(215,255,255,0.9)"
-            strokeWidth="2.4"
-          />
-          <path
-            d="M32.2 16 23.6 31.1h7l-3.4 14 13.2-18.2h-7.6l4-10.9Z"
-            fill={`url(#${coreGradient})`}
-            stroke="rgba(255,255,255,0.82)"
-            strokeLinejoin="round"
-            strokeWidth="1.4"
-          />
-          <path d="M20.2 16.2c4.3-3.2 8.9-4.9 13.8-5.2" stroke={`url(#${glowGradient})`} strokeLinecap="round" strokeWidth="1.6" />
-        </svg>
+    <div className={clsx("flex items-center gap-2.5", className)}>
+      <div
+        className={clsx(
+          "relative grid h-10 w-10 shrink-0 place-items-center rounded-xl",
+          inverted
+            ? "bg-white/[0.07] ring-1 ring-inset ring-white/12"
+            : "bg-brand-500/8 ring-1 ring-inset ring-brand-500/18",
+        )}
+      >
+        <BrandShield className="h-[1.6rem] w-[1.6rem]" />
       </div>
 
       {!compact ? (
-        <div>
-          <div className={clsx("display-font text-[1.35rem] font-semibold tracking-[-0.04em]", inverted ? "text-white" : "text-ink")}>
-            BreachSim
+        <div className="min-w-0">
+          <div
+            className={clsx(
+              "display-font text-[1.15rem] font-bold leading-none",
+              inverted ? "text-white" : "text-ink",
+            )}
+          >
+            Breach<span className="text-brand-400">Sim</span>
           </div>
-          <div className={clsx("mt-0.5 text-[0.68rem] uppercase tracking-[0.26em]", inverted ? "text-white/52" : "text-slate")}>
-            Human Risk Intelligence
-          </div>
+          {tagline ? (
+            <div
+              className={clsx(
+                "mt-1 truncate text-[0.6rem] font-semibold uppercase tracking-[0.19em]",
+                inverted ? "text-white/45" : "text-subtle",
+              )}
+            >
+              {tagline}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

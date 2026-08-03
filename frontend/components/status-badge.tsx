@@ -15,5 +15,5 @@ export function StatusBadge({ value }: { value: string }) {
                 ? "bg-moss/15 text-moss"
           : "bg-ember/15 text-ember";
 
-  return <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${styles}`}>{value.replaceAll("_", " ")}</span>;
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[0.68rem] font-bold capitalize leading-none ${styles}`}>{value.replaceAll("_", " ")}</span>;
 }

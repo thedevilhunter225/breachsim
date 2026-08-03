@@ -75,24 +75,20 @@ export function RiskIntelligenceConsole() {
 
   return (
     <>
-      <Panel className="overflow-hidden !p-0">
-        <div className="grid gap-5 bg-[linear-gradient(135deg,rgba(15,108,125,0.1),rgba(255,255,255,0)_38%,rgba(221,106,61,0.08))] p-5 lg:grid-cols-[1fr_auto] lg:items-center">
+      <section className="app-surface rounded-xl p-5 md:p-6">
+        <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
-            <div className="section-title">Risk Intelligence</div>
-            <h2 className="mt-3 max-w-4xl text-3xl font-semibold leading-tight tracking-[-0.03em] text-ink">
-              Adaptive risk engine for employees and departments
-            </h2>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate">
-              Converts simulation events into explainable scores, priority targets, and the next recommended retest.
-            </p>
+            <div className="section-title">Adaptive intelligence</div>
+            <h1 className="display-font mt-2 text-2xl font-semibold tracking-[-0.035em] text-ink">Human risk engine</h1>
+            <p className="mt-1.5 max-w-2xl text-sm text-slate">Explainable employee risk, department exposure and evidence-based retesting.</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[720px]">
+          <div className="grid gap-2 sm:grid-cols-3 lg:min-w-[620px]">
             <HeroPill label="Priority Employee" value={topRecommendation?.employee_name ?? employees[0]?.full_name ?? "No employees yet"} />
             <HeroPill label="Priority Department" value={selectedDepartment?.department ?? "No departments yet"} />
             <HeroPill label="Next Test" value={topRecommendation ? `${topRecommendation.recommended_channel.toUpperCase()} / ${topRecommendation.recommended_theme}` : "Run first campaign"} />
           </div>
         </div>
-      </Panel>
+      </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <OverviewCard label="Monitored Employees" value={riskIntel.overview.monitored_employees} tone="ink" detail="Active directory users." />
@@ -103,47 +99,28 @@ export function RiskIntelligenceConsole() {
       </div>
 
       <Panel>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="section-title">Signal Model</div>
-            <h3 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-ink">How the engine decides the next move</h3>
-          </div>
-          <p className="max-w-3xl text-sm leading-7 text-slate">
-            The engine reads structured telemetry from campaigns: delivered messages, clicks, QR scans, reports, training completions, scenario triggers, channel history, and recency.
-          </p>
-        </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <EngineStep title="1. Collect Signals" description="Normalize employee events across email, QR, SMS, and training pages." />
-          <EngineStep title="2. Score Risk" description="Weight risky actions, reporting behavior, training recovery, repeated triggers, and recency." />
-          <EngineStep title="3. Recommend Retest" description="Choose the next channel, theme, difficulty, learning objective, and retest window." />
-        </div>
-      </Panel>
-
-      <Panel>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="section-title">Adaptive Risk Engine</div>
-            <h3 className="mt-3 text-3xl font-semibold">Priority retest queue</h3>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate">
-              BreachSim analyzes prior clicks, QR scans, reporting behavior, training response, weak persuasion triggers, channel history, and recent activity. It recommends the next controlled scenario most useful for reducing unresolved human-risk patterns.
-            </p>
+            <h2 className="display-font mt-2 text-xl font-semibold tracking-[-0.03em] text-ink">Priority retest queue</h2>
+            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate">Ranked from campaign behavior, weak triggers, training response and recency.</p>
           </div>
-          <Link href="/scenario-lab" className="rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-mist">
-            Create Recommended Scenario
+          <Link href="/scenario-lab" className="app-primary-button">
+            Create recommended scenario
           </Link>
         </div>
 
-        <div className="mt-6 grid gap-4 xl:grid-cols-2">
+        <div className={(riskIntel.adaptive_recommendations ?? []).length > 1 ? "mt-6 grid gap-4 xl:grid-cols-2" : "mt-6 grid gap-4"}>
           {(riskIntel.adaptive_recommendations ?? []).length ? (
             riskIntel.adaptive_recommendations.slice(0, 4).map((recommendation) => (
-              <section key={recommendation.employee_id} className="rounded-[1.5rem] border border-ink/10 bg-white/85 p-5">
+              <section key={recommendation.employee_id} className="rounded-xl border border-ink/10 bg-white/85 p-4 md:p-5">
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="text-xs uppercase tracking-[0.18em] text-slate">Target Employee</div>
-                    <h4 className="mt-2 text-2xl font-semibold text-ink">{recommendation.employee_name}</h4>
+                    <h4 className="mt-2 display-font text-xl font-semibold text-ink">{recommendation.employee_name}</h4>
                     <p className="mt-1 text-sm text-slate">{recommendation.employee_email}</p>
                   </div>
-                  <div className="rounded-[1.25rem] bg-ember/10 px-4 py-3 text-center">
+                  <div className="rounded-xl bg-ember/10 px-4 py-3 text-center">
                     <div className="text-xs uppercase tracking-[0.16em] text-ember">Predicted Risk</div>
                     <div className="mt-1 text-2xl font-semibold text-ember">{recommendation.estimated_fall_likelihood}%</div>
                   </div>
@@ -181,9 +158,9 @@ export function RiskIntelligenceConsole() {
                   </div>
                 </div>
 
-                <p className="mt-4 text-sm leading-7 text-slate">{recommendation.rationale}</p>
+                <p className="mt-4 text-sm leading-6 text-slate">{recommendation.rationale}</p>
 
-                <div className="mt-4 rounded-2xl bg-sand px-4 py-3 text-sm text-slate">
+                <div className="mt-4 rounded-lg bg-sand px-4 py-3 text-sm text-slate">
                   <span className="font-semibold text-ink">Evidence:</span> {recommendation.evidence.join(" / ")}
                 </div>
 
@@ -235,7 +212,7 @@ export function RiskIntelligenceConsole() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <div className="section-title">Employee Intelligence</div>
-                <h3 className="mt-3 text-3xl font-semibold">Behavior analysis over time</h3>
+                <h3 className="display-font mt-2 text-xl font-semibold tracking-[-0.03em] text-ink">Employee behavior over time</h3>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <label className="flex min-w-[320px] flex-col gap-2 text-xs uppercase tracking-[0.18em] text-slate">
@@ -407,7 +384,7 @@ export function RiskIntelligenceConsole() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <div className="section-title">Department Intelligence</div>
-                <h3 className="mt-3 text-3xl font-semibold">Department-wise behavior report</h3>
+                <h3 className="display-font mt-2 text-xl font-semibold tracking-[-0.03em] text-ink">Department behavior report</h3>
               </div>
               <label className="flex min-w-[320px] flex-col gap-2 text-xs uppercase tracking-[0.18em] text-slate">
                 Select Department
@@ -541,18 +518,9 @@ export function RiskIntelligenceConsole() {
 
 function HeroPill({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-ink/10 bg-white/82 px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      <div className="text-xs uppercase tracking-[0.18em] text-slate">{label}</div>
-      <div className="mt-2 line-clamp-2 text-sm font-semibold leading-5 text-ink">{value}</div>
-    </div>
-  );
-}
-
-function EngineStep({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="rounded-2xl border border-ink/10 bg-sand/70 px-4 py-4">
-      <div className="text-sm font-semibold text-ink">{title}</div>
-      <p className="mt-2 text-sm leading-6 text-slate">{description}</p>
+    <div className="rounded-xl border border-ink/10 bg-sand/55 px-3 py-2.5">
+      <div className="text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-slate">{label}</div>
+      <div className="mt-1.5 line-clamp-2 text-sm font-semibold leading-5 text-ink">{value}</div>
     </div>
   );
 }
@@ -576,10 +544,9 @@ function OverviewCard({
   };
 
   return (
-    <div className="glass rounded-2xl border border-white/65 p-4 shadow-card">
-      <div className="text-xs uppercase tracking-[0.2em] text-slate">{label}</div>
-      <div className={`mt-3 text-2xl font-semibold ${toneMap[tone]}`}>{value}</div>
-      <p className="mt-2 text-xs leading-5 text-slate">{detail}</p>
+    <div className="app-surface rounded-xl p-4" title={detail}>
+      <div className="text-[0.62rem] font-semibold uppercase tracking-[0.13em] text-slate">{label}</div>
+      <div className={`mt-2.5 display-font text-2xl font-semibold tracking-[-0.03em] ${toneMap[tone]}`}>{value}</div>
     </div>
   );
 }
@@ -601,16 +568,16 @@ function SignalCard({
   };
 
   return (
-    <div className={`rounded-[1.5rem] border border-ink/10 px-4 py-4 ${toneMap[tone]}`}>
+    <div className={`rounded-xl border border-ink/10 px-4 py-3.5 ${toneMap[tone]}`}>
       <div className="text-xs uppercase tracking-[0.18em] text-slate">{label}</div>
-      <div className="mt-3 text-3xl font-semibold">{value}</div>
+      <div className="mt-2 display-font text-2xl font-semibold">{value}</div>
     </div>
   );
 }
 
 function AiSignal({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-ink/10 bg-sand px-4 py-3">
+    <div className="rounded-lg border border-ink/10 bg-sand px-3 py-2.5">
       <div className="text-xs uppercase tracking-[0.18em] text-slate">{label}</div>
       <div className="mt-2 text-sm font-semibold text-ink">{value}</div>
     </div>
@@ -619,7 +586,7 @@ function AiSignal({ label, value }: { label: string; value: string }) {
 
 function SummaryRow({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-sand px-4 py-3">
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-sand px-4 py-3">
       <div className="text-sm text-slate">{label}</div>
       <div className="text-sm font-semibold text-ink">{value}</div>
     </div>

@@ -1,38 +1,56 @@
 "use client";
 
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  FileLock2,
+  Loader2,
+  Lock,
+  Mail,
+  MessageSquare,
+  PhoneCall,
+  QrCode,
+  ScrollText,
+  ShieldCheck,
+  UserRoundCheck,
+  Video,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { BrandShield } from "@/components/brand-logo";
 import { useSession } from "@/components/session-provider";
-import { BrandLogo } from "@/components/brand-logo";
 
-const platformSignals = [
-  "Open employee portal",
-  "Live Delivery",
-  "Audit Trail",
-  "Adaptive Training",
+const CHANNELS: Array<{ icon: LucideIcon; label: string }> = [
+  { icon: Mail, label: "Email" },
+  { icon: MessageSquare, label: "SMS" },
+  { icon: QrCode, label: "QR" },
+  { icon: PhoneCall, label: "Voice" },
+  { icon: Video, label: "Deepfake" },
 ];
 
-const leftRailPoints = [
-  "Configure company directory and approved employee context",
-  "Generate realistic phishing simulations with review before launch",
-  "Track clicks, reports, form submits, and risk movement over time",
+const TRUST: Array<{ icon: LucideIcon; label: string }> = [
+  { icon: UserRoundCheck, label: "Consent-governed cloning" },
+  { icon: ScrollText, label: "Append-only audit trail" },
+  { icon: FileLock2, label: "Field-level encryption" },
 ];
+
+const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 export default function LoginPage() {
   const router = useRouter();
   const { ready, session, signIn } = useSession();
-  const [email, setEmail] = useState("admin@breachsim-lab.com");
-  const [password, setPassword] = useState("Admin123!");
+  const [email, setEmail] = useState(demoMode ? "admin@breachsim-lab.com" : "");
+  const [password, setPassword] = useState(demoMode ? "Admin123!" : "");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (ready && session) {
-      router.replace("/dashboard");
-    }
+    if (ready && session) router.replace("/dashboard");
   }, [ready, router, session]);
 
   async function handleLogin() {
@@ -48,147 +66,233 @@ export default function LoginPage() {
     }
   }
 
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText("admin@breachsim-lab.com / Admin123!");
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#07111c] text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(68,227,255,0.18),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(58,182,214,0.12),transparent_28%),radial-gradient(circle_at_top_right,rgba(89,112,171,0.14),transparent_26%),linear-gradient(180deg,#08111d_0%,#091321_50%,#050b14_100%)]" />
-      <div className="absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_18%_22%,rgba(255,255,255,0.6)_0,rgba(255,255,255,0)_1.4px),radial-gradient(circle_at_74%_18%,rgba(255,255,255,0.45)_0,rgba(255,255,255,0)_1.1px),radial-gradient(circle_at_36%_82%,rgba(255,255,255,0.38)_0,rgba(255,255,255,0)_1.1px),radial-gradient(circle_at_88%_76%,rgba(255,255,255,0.32)_0,rgba(255,255,255,0)_1px)]" />
-      <div className="pointer-events-none absolute -left-24 top-10 h-[28rem] w-[28rem] rounded-full bg-[radial-gradient(circle,rgba(82,229,255,0.18),rgba(82,229,255,0)_66%)] blur-3xl" />
-      <div className="pointer-events-none absolute bottom-0 left-0 right-0 top-0 opacity-55">
-        <svg viewBox="0 0 1440 960" className="h-full w-full" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M-40 740C122 654 283 614 448 620c173 7 317 71 464 54 157-18 308-115 568-87" stroke="rgba(132,232,255,0.12)" strokeWidth="2" fill="none" />
-          <path d="M-60 556C112 473 282 451 452 462c174 12 323 101 488 91 148-10 284-99 560-62" stroke="rgba(169,242,255,0.16)" strokeWidth="2" fill="none" />
-          <path d="M30 334c144 27 259 79 417 73 172-6 307-74 471-57 173 19 305 89 548 62" stroke="rgba(146,224,255,0.12)" strokeWidth="2" fill="none" />
-        </svg>
+    <main className="dark-login relative min-h-screen overflow-hidden bg-[#060d1c] text-white">
+      {/* Ambient background */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(1100px_620px_at_12%_-8%,rgba(43,139,255,0.22),transparent_60%),radial-gradient(900px_600px_at_100%_110%,rgba(30,111,224,0.18),transparent_55%),linear-gradient(180deg,#081326_0%,#060d1c_55%,#040914_100%)]" />
+        <div className="absolute inset-0 opacity-[0.35] [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:56px_56px] [mask-image:radial-gradient(1000px_700px_at_20%_0%,#000_20%,transparent_75%)]" />
+        <div className="login-orb absolute -left-32 top-[-10%] h-[34rem] w-[34rem] rounded-full bg-[radial-gradient(circle,rgba(79,163,255,0.28),transparent_65%)] blur-3xl" />
+        <div className="login-orb absolute right-[-10%] bottom-[-15%] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,rgba(43,139,255,0.2),transparent_65%)] blur-3xl [animation-delay:-6s]" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen max-w-[1360px] items-center px-4 py-6 sm:px-6 lg:px-8">
-        <div className="grid w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(11,16,29,0.96),rgba(8,14,25,0.94))] shadow-[0_30px_120px_rgba(0,0,0,0.45)] xl:grid-cols-[0.9fr_1.1fr]">
-          <section className="relative min-h-[560px] overflow-hidden border-b border-white/8 px-8 py-8 sm:px-10 xl:border-b-0 xl:border-r xl:border-white/8 xl:px-12 xl:py-10">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_34%,rgba(94,230,255,0.2),transparent_28%),radial-gradient(circle_at_48%_55%,rgba(147,227,255,0.14),transparent_26%),linear-gradient(180deg,rgba(18,65,92,0.34),rgba(8,18,35,0.08))]" />
-            <div className="absolute inset-y-0 right-0 w-px bg-white/8" />
-            <div className="absolute inset-x-0 bottom-0 h-48 bg-[linear-gradient(180deg,rgba(6,13,24,0),rgba(6,13,24,0.78))]" />
-            <div className="pointer-events-none absolute inset-0 opacity-70">
-              <svg viewBox="0 0 620 820" className="h-full w-full" preserveAspectRatio="none" aria-hidden="true">
-                <path d="M-24 604C143 454 321 392 559 410" stroke="rgba(159,240,255,0.22)" strokeWidth="2" fill="none" />
-                <path d="M-58 690C150 505 337 450 636 484" stroke="rgba(132,232,255,0.18)" strokeWidth="2" fill="none" />
-                <path d="M-20 760C188 571 390 541 658 577" stroke="rgba(189,244,255,0.16)" strokeWidth="2" fill="none" />
-              </svg>
+      <div className="relative mx-auto grid min-h-screen w-full max-w-[1240px] items-center gap-10 px-5 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:px-10">
+        {/* ---------------------------------------------------------- brand side */}
+        <section className="stagger hidden flex-col justify-between lg:flex">
+          <div className="flex items-center gap-3">
+            <div className="relative grid h-11 w-11 place-items-center overflow-hidden rounded-xl bg-white/[0.06] ring-1 ring-inset ring-white/12">
+              <BrandShield className="h-7 w-7" />
+              {/* Slow forensic "read" across the mark */}
+              <span className="scan-sweep pointer-events-none absolute inset-x-0 h-5 bg-gradient-to-b from-transparent via-brand-300/25 to-transparent" />
+            </div>
+            <div>
+              <div className="display-font text-xl font-bold leading-none">
+                Breach<span className="text-brand-400">Sim</span>
+              </div>
+              <div className="mt-1 font-mono text-[0.58rem] font-medium uppercase tracking-[0.22em] text-white/40">
+                Human Risk Intelligence
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-xl py-10">
+            <div className="inline-flex items-center gap-2 rounded-md border border-brand-400/25 bg-brand-400/10 px-3 py-1.5 font-mono text-[0.62rem] font-medium uppercase tracking-[0.16em] text-brand-200">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-300 opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-brand-300" />
+              </span>
+              ai-driven · multi-channel
             </div>
 
-            <div className="relative flex h-full flex-col">
-              <BrandLogo inverted />
+            <h1 className="display-font mt-6 text-[2.9rem] font-bold leading-[1.04] tracking-[-0.04em] text-white">
+              Test your people against{" "}
+              <span className="bg-gradient-to-r from-brand-300 to-brand-500 bg-clip-text text-transparent">
+                every modern attack.
+              </span>
+            </h1>
+            <p className="mt-5 max-w-md text-[0.95rem] leading-relaxed text-white/60">
+              Governed phishing simulation across five channels — including real cloned-voice and deepfake
+              impersonation — with human-risk scoring, adaptive training, and evidence-grade reporting.
+            </p>
 
-              <div className="mt-12 max-w-sm">
-                <div className="rounded-full border border-white/12 bg-white/6 px-4 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-cyan-100/70">
-                  Control Center
-                </div>
-                <h1 className="display-font mt-6 text-4xl font-semibold tracking-[-0.05em] text-white sm:text-[3.2rem]">
-                  Human risk operations for live phishing simulations.
-                </h1>
-                <p className="mt-5 max-w-md text-sm leading-7 text-white/68">
-                  Configure the company directory, generate believable scenarios, review campaigns, and monitor human risk behavior without leaving the admin console.
-                </p>
+            {/* Channel showcase — the product's differentiator */}
+            <div className="mt-8">
+              <div className="font-mono text-[0.6rem] font-medium uppercase tracking-[0.16em] text-white/35">
+                05 / attack channels
               </div>
-
-              <div className="mt-auto space-y-4 pt-10">
-                {leftRailPoints.map((point, index) => (
-                  <div key={point} className="flex items-start gap-4 rounded-[1.2rem] border border-white/10 bg-white/6 px-4 py-4 backdrop-blur-sm">
-                    <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-xs font-semibold text-cyan-100">
-                      0{index + 1}
-                    </div>
-                    <div className="text-sm leading-6 text-white/78">{point}</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {CHANNELS.map(({ icon: Icon, label }, index) => (
+                  <div
+                    key={label}
+                    className="group flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2.5 backdrop-blur-sm transition-colors hover:border-brand-400/40 hover:bg-brand-400/[0.08]"
+                  >
+                    <span className="font-mono text-[0.6rem] text-white/25">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <Icon size={15} className="text-brand-300" />
+                    <span className="text-[0.8rem] font-semibold text-white/82">{label}</span>
                   </div>
                 ))}
               </div>
             </div>
-          </section>
+          </div>
 
-          <section className="relative px-8 py-8 sm:px-10 xl:px-12 xl:py-12">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(71,99,188,0.12),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(69,225,255,0.08),transparent_24%)]" />
-            <div className="relative mx-auto max-w-[38rem]">
-              <div className="section-title !text-white/48">Admin Sign In</div>
-              <h2 className="display-font mt-4 text-4xl font-semibold tracking-[-0.05em] text-white sm:text-[3rem]">
-                Sign in to the control center
-              </h2>
-              <p className="mt-4 max-w-2xl text-base leading-8 text-white/62">
-                Sign in as the company security admin to configure the directory, generate scenarios, review campaigns, and inspect risk intelligence.
-              </p>
+          {/* Trust row */}
+          <div className="flex flex-wrap gap-x-6 gap-y-2.5">
+            {TRUST.map(({ icon: Icon, label }) => (
+              <div key={label} className="flex items-center gap-2 text-[0.78rem] text-white/50">
+                <Icon size={14} className="text-brand-300/80" />
+                {label}
+              </div>
+            ))}
+          </div>
+        </section>
 
-              <form
-                className="mt-10 space-y-5"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void handleLogin();
-                }}
-              >
-                <label className="block">
-                  <div className="mb-3 text-xs uppercase tracking-[0.28em] text-white/42">Email</div>
+        {/* ---------------------------------------------------------- sign-in card */}
+        <section className="relative w-full">
+          {/* Mobile brand */}
+          <div className="mb-7 flex items-center gap-2.5 lg:hidden">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-white/[0.06] ring-1 ring-inset ring-white/12">
+              <BrandShield className="h-6 w-6" />
+            </div>
+            <div className="display-font text-lg font-bold">
+              Breach<span className="text-brand-400">Sim</span>
+            </div>
+          </div>
+
+          <div className="reveal relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035] p-7 shadow-[0_30px_90px_rgba(0,0,0,0.5)] backdrop-blur-xl [animation-delay:200ms] sm:p-9">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-400/50 to-transparent" />
+
+            <div className="font-mono text-[0.62rem] font-medium uppercase tracking-[0.16em] text-brand-300/80">
+              secure admin sign-in
+            </div>
+            <h2 className="display-font mt-2 text-[1.85rem] font-bold tracking-[-0.02em] text-white">
+              Welcome back
+            </h2>
+            <p className="mt-2 text-[0.88rem] leading-relaxed text-white/55">
+              Sign in to configure the directory, generate scenarios, and inspect human-risk intelligence.
+            </p>
+
+            <form
+              className="mt-7 space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleLogin();
+              }}
+            >
+              <div>
+                <label htmlFor="login-email" className="mb-1.5 block text-[0.72rem] font-semibold text-white/55">
+                  Email address
+                </label>
+                <div className="group relative">
+                  <Mail
+                    size={17}
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-white/35 transition-colors group-focus-within:text-brand-300"
+                  />
                   <input
+                    id="login-email"
+                    type="email"
+                    autoComplete="username"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    className="h-14 w-full rounded-[1.35rem] border border-white/10 bg-white/[0.035] px-5 text-lg text-white outline-none placeholder:text-white/28"
+                    placeholder="you@company.com"
+                    className="login-input h-12 w-full rounded-xl border border-white/12 bg-white/[0.04] pl-10 pr-3.5 text-[0.95rem] text-white outline-none transition placeholder:text-white/25 focus:border-brand-400/70 focus:bg-white/[0.06]"
                   />
-                </label>
+                </div>
+              </div>
 
-                <label className="block">
-                  <div className="mb-3 text-xs uppercase tracking-[0.28em] text-white/42">Password</div>
+              <div>
+                <label htmlFor="login-password" className="mb-1.5 block text-[0.72rem] font-semibold text-white/55">
+                  Password
+                </label>
+                <div className="group relative">
+                  <Lock
+                    size={17}
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-white/35 transition-colors group-focus-within:text-brand-300"
+                  />
                   <input
-                    type="password"
+                    id="login-password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    className="h-14 w-full rounded-[1.35rem] border border-white/20 bg-white px-5 text-lg font-medium text-slate-950 outline-none placeholder:text-slate-400"
+                    placeholder="••••••••"
+                    className="login-input h-12 w-full rounded-xl border border-white/12 bg-white/[0.04] pl-10 pr-11 text-[0.95rem] text-white outline-none transition placeholder:text-white/25 focus:border-brand-400/70 focus:bg-white/[0.06]"
                   />
-                </label>
-
-                {error ? <div className="rounded-[1.2rem] border border-[#ff9b7b]/25 bg-[#ff8d6a]/12 px-4 py-3 text-sm text-[#ffd8ca]">{error}</div> : null}
-
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="h-14 w-full rounded-[1.35rem] border border-cyan-200/14 bg-[linear-gradient(180deg,#3a8ea3_0%,#2a778b_35%,#1c5968_100%)] text-lg font-semibold text-white shadow-[0_16px_32px_rgba(42,119,139,0.28)] disabled:opacity-60"
-                >
-                  {submitting ? "Entering BreachSim..." : "Enter BreachSim"}
-                </button>
-              </form>
-
-              <div className="mt-10 rounded-[1.5rem] border border-white/10 bg-white/[0.035] px-5 py-5 backdrop-blur-sm">
-                <div className="text-xs uppercase tracking-[0.28em] text-white/40">Demo Credentials</div>
-                <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="text-lg font-medium tracking-[-0.02em] text-white/84">admin@breachsim-lab.com / Admin123!</div>
                   <button
                     type="button"
-                    onClick={handleCopy}
-                    className="inline-flex items-center justify-center rounded-full border border-white/12 bg-white/[0.02] px-4 py-2 text-sm font-medium text-white/78 shadow-none"
+                    onClick={() => setShowPassword((value) => !value)}
+                    className="absolute right-2.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-white/40 transition hover:bg-white/8 hover:text-white/80"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    {copied ? "Copied" : "Copy"}
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
               </div>
 
-              <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-3 text-sm text-white/56">
-                <Link href="/employee-portal" className="font-medium text-cyan-100/88">
-                  Open employee portal
-                </Link>
-                {platformSignals.slice(1).map((signal) => (
-                  <div key={signal} className="flex items-center gap-4">
-                    <span className="hidden h-1 w-1 rounded-full bg-white/24 sm:block" />
-                    <span>{signal}</span>
+              {error ? (
+                <div className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3.5 py-2.5 text-[0.82rem] text-rose-100">
+                  {error}
+                </div>
+              ) : null}
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-brand-400 to-brand-600 text-[0.95rem] font-bold text-white shadow-[0_14px_30px_rgba(43,139,255,0.35)] transition hover:from-brand-300 hover:to-brand-500 active:translate-y-px disabled:opacity-60"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={17} className="animate-spin" />
+                    Signing in…
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck size={17} />
+                    Enter control center
+                    <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            {demoMode ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("admin@breachsim-lab.com");
+                  setPassword("Admin123!");
+                }}
+                className="mt-5 flex w-full items-center justify-between gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] px-4 py-3 text-left transition hover:border-brand-400/40 hover:bg-brand-400/[0.05]"
+              >
+                <div>
+                  <div className="font-mono text-[0.6rem] font-medium uppercase tracking-[0.14em] text-white/40">
+                    demo credentials
                   </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        </div>
+                  <div className="numeric mt-0.5 font-mono text-[0.82rem] text-white/75">
+                    admin@breachsim-lab.com · Admin123!
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-lg bg-brand-400/15 px-2.5 py-1.5 text-[0.72rem] font-bold text-brand-200">
+                  Fill
+                </span>
+              </button>
+            ) : null}
+          </div>
+
+          <div className="reveal mt-5 flex items-center justify-between px-1 text-[0.8rem] [animation-delay:320ms]">
+            <Link
+              href="/employee-portal"
+              className="font-semibold text-white/60 transition hover:text-white"
+            >
+              Employee portal →
+            </Link>
+            <span className="inline-flex items-center gap-1.5 font-mono text-[0.68rem] uppercase tracking-[0.1em] text-white/40">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
+              system operational
+            </span>
+          </div>
+        </section>
       </div>
     </main>
   );

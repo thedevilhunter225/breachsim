@@ -15,12 +15,9 @@ export function MetricCard({
   };
 
   return (
-    <div className={`shell-ring rounded-[1.65rem] border border-white/65 p-5 shadow-card ${toneMap[tone]}`}>
-      <div className="text-[0.68rem] uppercase tracking-[0.24em] text-slate">{label}</div>
-      <div className="mt-5 flex items-end justify-between gap-3">
-        <div className="display-font text-3xl font-semibold tracking-[-0.04em]">{value}</div>
-        <div className="h-10 w-10 rounded-2xl border border-ink/10 bg-white/70" />
-      </div>
+    <div className={`app-surface rounded-xl p-4 ${toneMap[tone]}`}>
+      <div className="text-[0.65rem] font-semibold uppercase tracking-[0.13em] text-slate">{label}</div>
+      <div className="mt-3 display-font text-2xl font-semibold tracking-[-0.04em]">{value}</div>
     </div>
   );
 }

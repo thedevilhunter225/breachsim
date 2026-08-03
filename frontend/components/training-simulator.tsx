@@ -165,7 +165,7 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
 
         <div className="grid gap-0 xl:grid-cols-[0.78fr_1.22fr]">
           <aside className="border-b border-slate-200 bg-slate-950 p-6 text-white xl:border-b-0 xl:border-r">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">{channelLabel(channel)} simulation</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-200">{channelLabel(channel)} simulation</div>
             <h1 className="mt-4 text-3xl font-bold leading-tight">{copy.headline}</h1>
             <p className="mt-4 text-sm leading-7 text-slate-300">{copy.intro}</p>
 
@@ -199,7 +199,7 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
                   <input
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-cyan-600"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-600"
                     placeholder="name@company.com"
                   />
                 </label>
@@ -209,7 +209,7 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
                     type="password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-cyan-600"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-600"
                     placeholder="Enter password"
                   />
                 </label>
@@ -218,7 +218,7 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
                   <input
                     value={code}
                     onChange={(event) => setCode(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-cyan-600"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-600"
                     placeholder="6-digit code"
                   />
                 </label>

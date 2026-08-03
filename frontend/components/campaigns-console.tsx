@@ -1,26 +1,71 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import clsx from "clsx";
+import {
+  Activity,
+  CheckCircle2,
+  Copy,
+  Download,
+  ExternalLink,
+  Loader2,
+  Mail,
+  MessageSquare,
+  PhoneCall,
+  QrCode,
+  Rocket,
+  Send,
+  ShieldCheck,
+  Target,
+  Trash2,
+  Video,
+  type LucideIcon,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { Panel } from "@/components/panel";
 import { QrPosterPreview } from "@/components/qr-poster-preview";
 import { StatusBadge } from "@/components/status-badge";
 import { useSession } from "@/components/session-provider";
 import {
-  Campaign,
+  approveCampaign,
   createCampaign,
-  deliverCampaignEmail,
-  DeliveryAttempt,
-  Employee,
+  deleteCampaign,
+  deliverCampaign,
   getCampaigns,
   getDeliveryAttempts,
   getEmployees,
   getScenarios,
   launchCampaignSandbox,
   requestCampaignApproval,
-  approveCampaign,
-  Scenario,
+  type Campaign,
+  type DeliveryAttempt,
+  type Employee,
+  type Scenario,
 } from "@/lib/client-api";
+
+const CHANNELS: Array<{ value: string; label: string; icon: LucideIcon; deliverLabel: string }> = [
+  { value: "email", label: "Email", icon: Mail, deliverLabel: "Send live email" },
+  { value: "sms", label: "SMS", icon: MessageSquare, deliverLabel: "Send live SMS" },
+  { value: "qr", label: "QR", icon: QrCode, deliverLabel: "Publish QR session" },
+  { value: "vishing", label: "Voice", icon: PhoneCall, deliverLabel: "Activate call session" },
+  { value: "deepfake", label: "Deepfake", icon: Video, deliverLabel: "Activate media session" },
+];
+
+function channelMeta(channel: string) {
+  return CHANNELS.find((entry) => entry.value === channel) ?? CHANNELS[0];
+}
+
+function readError(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error) {
+    const raw = String((error as Error).message);
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === "string" ? parsed : raw;
+    } catch {
+      return raw;
+    }
+  }
+  return "Action failed.";
+}
 
 export function CampaignsConsole() {
   const { session } = useSession();
@@ -29,18 +74,19 @@ export function CampaignsConsole() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [form, setForm] = useState({
     name: "",
     description: "",
     channel: "email",
     scenario_id: "",
-    requires_second_approval: false,
+    requires_second_approval: true,
     sandbox_mode: true,
-    learning_objective: "Recognize phishing patterns.",
+    learning_objective: "Recognize social engineering patterns.",
   });
-  const [message, setMessage] = useState<string | null>(null);
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     if (!session) return;
     const [campaignRows, attemptRows, employeeRows, scenarioRows] = await Promise.all([
       getCampaigns(session.access_token),
@@ -48,272 +94,710 @@ export function CampaignsConsole() {
       getEmployees(session.access_token),
       getScenarios(session.access_token),
     ]);
-    const approvedScenarios = scenarioRows.filter((scenario) => scenario.status === "approved");
+    const approved = scenarioRows.filter((scenario) => scenario.status === "approved");
     setCampaigns(campaignRows);
     setAttempts(attemptRows);
     setEmployees(employeeRows);
-    setScenarios(approvedScenarios);
+    setScenarios(approved);
     setForm((current) => {
-      if (current.scenario_id) {
-        return current;
-      }
-      const matchingScenario = approvedScenarios.find((scenario) => scenario.channel === current.channel) ?? approvedScenarios[0];
-      return { ...current, scenario_id: matchingScenario?.id ?? "" };
+      if (current.scenario_id) return current;
+      const match = approved.find((scenario) => scenario.channel === current.channel) ?? approved[0];
+      return { ...current, scenario_id: match?.id ?? "" };
     });
-  }
+  }, [session]);
 
   useEffect(() => {
     void loadData();
-  }, [session]);
+  }, [loadData]);
+
+  const channelScenarios = useMemo(
+    () => scenarios.filter((scenario) => scenario.channel === form.channel),
+    [scenarios, form.channel],
+  );
+
+  function updateChannel(channel: string) {
+    const next = scenarios.find((scenario) => scenario.channel === channel)?.id ?? "";
+    setForm({ ...form, channel, scenario_id: next });
+  }
+
+  async function runAction(key: string, action: () => Promise<unknown>, success: string) {
+    setBusy(key);
+    setNotice(null);
+    try {
+      await action();
+      setNotice({ tone: "ok", text: success });
+      await loadData();
+    } catch (error) {
+      setNotice({ tone: "error", text: readError(error) });
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function handleCreate() {
     if (!session || !selectedEmployees.length || !form.scenario_id) return;
-    await createCampaign(session.access_token, {
-      name: form.name,
-      description: form.description,
-      channel: form.channel,
-      campaign_type: "one_time",
-      throttling_per_hour: 25,
-      target_employee_ids: selectedEmployees,
-      scenario_ids: [form.scenario_id],
-      requires_second_approval: form.requires_second_approval,
-      sandbox_mode: form.sandbox_mode,
-      learning_objective: form.learning_objective,
-      target_filters: { created_from_ui: true },
-    });
-    setMessage("Campaign created.");
-    setForm({
-      name: "",
-      description: "",
-      channel: "email",
-      scenario_id: scenarios[0]?.id ?? "",
-      requires_second_approval: false,
-      sandbox_mode: true,
-      learning_objective: "Recognize phishing patterns.",
-    });
+    await runAction(
+      "create",
+      () =>
+        createCampaign(session.access_token, {
+          name: form.name,
+          description: form.description,
+          channel: form.channel,
+          campaign_type: "one_time",
+          throttling_per_hour: 25,
+          target_employee_ids: selectedEmployees,
+          scenario_ids: [form.scenario_id],
+          requires_second_approval: form.requires_second_approval,
+          sandbox_mode: form.sandbox_mode,
+          learning_objective: form.learning_objective,
+          target_filters: { created_from_ui: true },
+        }),
+      "Campaign created.",
+    );
+    setForm((current) => ({ ...current, name: "", description: "" }));
     setSelectedEmployees([]);
-    await loadData();
   }
 
-  async function runAction(action: () => Promise<unknown>, success: string) {
-    await action();
-    setMessage(success);
-    await loadData();
-  }
+  async function handleDelete(campaign: Campaign) {
+    if (!session) return;
+    if (!window.confirm(`Delete campaign "${campaign.name}"? This cannot be undone.`)) return;
 
-  const channelScenarios = scenarios.filter((scenario) => scenario.channel === form.channel);
-  const selectableScenarios = channelScenarios.length ? channelScenarios : scenarios;
-
-  function updateChannel(channel: string) {
-    const nextScenario = scenarios.find((scenario) => scenario.channel === channel)?.id ?? scenarios[0]?.id ?? "";
-    setForm({ ...form, channel, scenario_id: nextScenario });
+    setBusy(campaign.id);
+    setNotice(null);
+    try {
+      const result = await deleteCampaign(session.access_token, campaign.id);
+      setNotice({ tone: "ok", text: `Deleted "${result.label}".` });
+      await loadData();
+    } catch (error) {
+      const message = readError(error);
+      // The API refuses to erase recorded evidence unless the caller opts in explicitly.
+      if (message.toLowerCase().includes("purge_evidence")) {
+        const confirmedPurge = window.confirm(
+          `"${campaign.name}" holds recorded simulation evidence.\n\n` +
+            `Deleting it destroys the proof that this exercise ran, including employee ` +
+            `interactions and training assignments.\n\nPurge the evidence and delete anyway?`,
+        );
+        if (confirmedPurge) {
+          try {
+            const result = await deleteCampaign(session.access_token, campaign.id, true);
+            const events = result.removed?.events ?? 0;
+            setNotice({
+              tone: "ok",
+              text: `Deleted "${result.label}" and purged ${events} recorded event(s). The purge is in the audit trail.`,
+            });
+            await loadData();
+          } catch (purgeError) {
+            setNotice({ tone: "error", text: readError(purgeError) });
+          }
+        }
+      } else {
+        setNotice({ tone: "error", text: message });
+      }
+    } finally {
+      setBusy(null);
+    }
   }
 
   function copyValue(value?: string) {
     if (!value) return;
     void navigator.clipboard?.writeText(value);
-    setMessage("Copied to clipboard.");
+    setNotice({ tone: "ok", text: "Copied to clipboard." });
   }
 
+  const canCreate = Boolean(form.name.trim() && form.scenario_id && selectedEmployees.length);
+
   return (
-    <>
-      <Panel>
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="section-title">Campaign Operations</div>
-            <h2 className="mt-2 text-2xl font-semibold text-ink">Simulation campaign console</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate">
-              Build a campaign, approve it, deliver through the selected channel, then track behavior and risk movement.
+    <div className="space-y-4">
+      <section className="card p-5 md:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="section-title">Campaign operations</div>
+            <h1 className="display-font mt-1.5 text-2xl font-bold text-ink">Campaign control</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+              Create, dual-approve and deliver simulations across email, SMS, QR, voice and synthetic media.
             </p>
           </div>
-          <div className="grid w-full grid-cols-3 gap-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate lg:w-auto">
-            <div className="rounded-md border border-ink/10 bg-slate-50 px-4 py-2">Draft</div>
-            <div className="rounded-md border border-ink/10 bg-slate-50 px-4 py-2">Approve</div>
-            <div className="rounded-md bg-ink px-4 py-2 text-white">Deliver</div>
+          <div className="grid grid-cols-3 gap-2.5">
+            <Stat icon={Target} label="Directory" value={employees.length} />
+            <Stat icon={CheckCircle2} label="Approved" value={scenarios.length} tone="text-signal" />
+            <Stat icon={Activity} label="Campaigns" value={campaigns.length} />
           </div>
         </div>
-      </Panel>
+      </section>
 
-      <Panel>
-        <div className="section-title">Campaign Modules</div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <ModuleTile title="Groups" value={`${employees.length} targets`} detail="Directory employees" />
-          <ModuleTile title="Templates" value={`${scenarios.length} approved`} detail="Scenario drafts" />
-          <ModuleTile title="Landing Pages" value="Tracked" detail="Training pages" />
-          <ModuleTile title="Sending Profile" value="Sandbox/live" detail="Delivery config" />
-          <ModuleTile title="Campaigns" value={`${campaigns.length} total`} detail="Launch objects" />
-          <ModuleTile title="Results" value={`${attempts.length} events`} detail="Attempts timeline" />
+      {notice ? (
+        <div
+          className={clsx(
+            "rounded-xl border px-4 py-3 text-[0.85rem]",
+            notice.tone === "ok"
+              ? "border-signal/25 bg-signal/8 text-signal"
+              : "border-breach/25 bg-breach/8 text-breach",
+          )}
+        >
+          {notice.text}
         </div>
-      </Panel>
+      ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <Panel>
-          <div className="section-title">Create Campaign</div>
-          <div className="mt-4 grid gap-4">
-            <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Campaign name" className="rounded-md border border-ink/10 px-3 py-2.5 outline-none" />
-            <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Description" className="min-h-20 rounded-md border border-ink/10 px-3 py-2.5 outline-none" />
-            <select value={form.channel} onChange={(event) => updateChannel(event.target.value)} className="rounded-md border border-ink/10 px-3 py-2.5 outline-none">
-              <option value="email">Email</option>
-              <option value="sms">SMS</option>
-              <option value="qr">QR</option>
-              <option value="vishing">Vishing Script</option>
-            </select>
-            <select value={form.scenario_id} onChange={(event) => setForm({ ...form, scenario_id: event.target.value })} className="rounded-md border border-ink/10 px-3 py-2.5 outline-none">
-              {selectableScenarios.map((scenario) => (
-                <option key={scenario.id} value={scenario.id}>{scenario.title}</option>
-              ))}
-            </select>
-            <div className="enterprise-muted-card rounded-lg p-4">
-              <div className="text-sm font-semibold text-ink">Target Employees</div>
-              <div className="mt-3 grid gap-2">
-                {employees.slice(0, 12).map((employee) => {
+      <div className="grid gap-4 xl:grid-cols-[400px_minmax(0,1fr)]">
+        {/* Composer */}
+        <section className="card self-start p-5 xl:sticky xl:top-[86px]">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/10 text-brand-500">
+              <Send size={18} />
+            </div>
+            <div>
+              <div className="section-title">Composer</div>
+              <h2 className="display-font mt-0.5 text-lg font-bold text-ink">Create campaign</h2>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4">
+            <div>
+              <label className="field-label" htmlFor="campaign-name">
+                Campaign name
+              </label>
+              <input
+                id="campaign-name"
+                className="field"
+                value={form.name}
+                onChange={(event) => setForm({ ...form, name: event.target.value })}
+                placeholder="Q3 Finance Awareness Drill"
+              />
+            </div>
+
+            <div>
+              <label className="field-label" htmlFor="campaign-description">
+                Description
+              </label>
+              <textarea
+                id="campaign-description"
+                className="field min-h-20"
+                value={form.description}
+                onChange={(event) => setForm({ ...form, description: event.target.value })}
+                placeholder="What this campaign is testing and why."
+              />
+            </div>
+
+            <div>
+              <span className="field-label">Channel</span>
+              <div className="grid grid-cols-5 gap-1.5">
+                {CHANNELS.map((channel) => {
+                  const Icon = channel.icon;
+                  const active = form.channel === channel.value;
+                  const available = scenarios.some((scenario) => scenario.channel === channel.value);
+                  return (
+                    <button
+                      key={channel.value}
+                      type="button"
+                      onClick={() => updateChannel(channel.value)}
+                      className={clsx(
+                        "flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 transition",
+                        active
+                          ? "border-brand-500 bg-brand-500/10 text-brand-600"
+                          : "border-line bg-surface text-muted hover:border-line-strong hover:text-ink",
+                        !available && !active && "opacity-45",
+                      )}
+                      title={available ? channel.label : `No approved ${channel.label} scenario yet`}
+                    >
+                      <Icon size={16} />
+                      <span className="text-[0.62rem] font-bold">{channel.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="field-label" htmlFor="campaign-scenario">
+                Approved scenario
+              </label>
+              <select
+                id="campaign-scenario"
+                className="field"
+                value={form.scenario_id}
+                onChange={(event) => setForm({ ...form, scenario_id: event.target.value })}
+                disabled={channelScenarios.length === 0}
+              >
+                {channelScenarios.length === 0 ? (
+                  <option value="">No approved {channelMeta(form.channel).label} scenario</option>
+                ) : (
+                  channelScenarios.map((scenario) => (
+                    <option key={scenario.id} value={scenario.id}>
+                      {scenario.title}
+                    </option>
+                  ))
+                )}
+              </select>
+              {channelScenarios.length === 0 ? (
+                <p className="field-hint">
+                  Generate and approve a {channelMeta(form.channel).label} scenario in Scenario Studio first.
+                </p>
+              ) : null}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="field-label !mb-0">Target employees</span>
+                <span className="text-[0.72rem] font-semibold text-muted">{selectedEmployees.length} selected</span>
+              </div>
+              <div className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-line bg-surface-muted p-2">
+                {employees.map((employee) => {
                   const checked = selectedEmployees.includes(employee.id);
                   return (
-                    <label key={employee.id} className="flex items-center gap-3 text-sm text-slate">
+                    <label
+                      key={employee.id}
+                      className={clsx(
+                        "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-[0.8rem] transition",
+                        checked ? "bg-brand-500/10 text-ink" : "text-muted hover:bg-surface",
+                      )}
+                    >
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={(event) => {
+                        onChange={(event) =>
                           setSelectedEmployees((current) =>
-                            event.target.checked ? [...current, employee.id] : current.filter((id) => id !== employee.id)
-                          );
-                        }}
+                            event.target.checked
+                              ? [...current, employee.id]
+                              : current.filter((id) => id !== employee.id),
+                          )
+                        }
                       />
-                      <span>{employee.full_name} - {employee.email}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        <span className="font-semibold">{employee.full_name}</span>
+                        <span className="ml-1.5 text-subtle">{employee.email}</span>
+                      </span>
+                      <span className="numeric shrink-0 text-[0.7rem] font-bold text-subtle">
+                        {employee.risk_score}
+                      </span>
                     </label>
                   );
                 })}
               </div>
             </div>
-            <label className="flex items-center gap-3 text-sm text-slate">
-              <input type="checkbox" checked={form.requires_second_approval} onChange={(event) => setForm({ ...form, requires_second_approval: event.target.checked })} />
-              Require second approval
-            </label>
-            <input value={form.learning_objective} onChange={(event) => setForm({ ...form, learning_objective: event.target.value })} placeholder="Learning objective" className="rounded-md border border-ink/10 px-3 py-2.5 outline-none" />
-            {message ? <div className="rounded-md border border-moss/20 bg-moss/10 px-3 py-2.5 text-sm text-moss">{message}</div> : null}
-            <button onClick={handleCreate} className="rounded-md bg-ink px-4 py-2.5 font-semibold text-white">Create Campaign</button>
-          </div>
-        </Panel>
 
-        <Panel>
-          <div className="section-title">Campaign Actions</div>
-          <div className="mt-5 space-y-3">
-            {campaigns.map((campaign) => {
-              const latestAttempt = attempts.find((attempt) => attempt.campaign_id === campaign.id);
-              const isQrAttempt = Boolean(latestAttempt?.preview_payload.qr_image_data_url);
+            <label className="flex cursor-pointer items-center gap-2.5 text-[0.82rem] text-muted">
+              <input
+                type="checkbox"
+                checked={form.requires_second_approval}
+                onChange={(event) => setForm({ ...form, requires_second_approval: event.target.checked })}
+              />
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldCheck size={14} className="text-brand-500" />
+                Require a second administrator approval
+              </span>
+            </label>
+
+            <div>
+              <label className="field-label" htmlFor="campaign-objective">
+                Learning objective
+              </label>
+              <input
+                id="campaign-objective"
+                className="field"
+                value={form.learning_objective}
+                onChange={(event) => setForm({ ...form, learning_objective: event.target.value })}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void handleCreate()}
+              disabled={!canCreate || busy === "create"}
+              className="btn-primary w-full"
+            >
+              {busy === "create" ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+              Create campaign
+            </button>
+          </div>
+        </section>
+
+        {/* Workflow */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="section-title">Launch queue</div>
+              <h2 className="display-font mt-0.5 text-xl font-bold text-ink">Campaign workflow</h2>
+            </div>
+            <span className="badge badge-neutral">{campaigns.length} total</span>
+          </div>
+
+          {campaigns.length === 0 ? (
+            <div className="card px-5 py-16 text-center">
+              <Rocket className="mx-auto text-subtle" size={30} />
+              <p className="mt-3 text-[0.92rem] font-semibold text-ink">No campaigns yet</p>
+              <p className="mx-auto mt-1.5 max-w-sm text-[0.83rem] leading-relaxed text-muted">
+                Create one from the composer once you have an approved scenario.
+              </p>
+            </div>
+          ) : (
+            campaigns.map((campaign) => {
+              const meta = channelMeta(campaign.channel);
+              const ChannelIcon = meta.icon;
+              const attempt = attempts.find((row) => row.campaign_id === campaign.id);
+              const payload = attempt?.preview_payload ?? {};
+              const launchable = campaign.status === "approved" || campaign.status === "scheduled";
+              const deliverable = launchable || campaign.status === "active";
 
               return (
-                <div key={campaign.id} className="enterprise-card rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-semibold text-ink">{campaign.name}</h3>
-                    <StatusBadge value={campaign.status} />
+                <article key={campaign.id} className="card overflow-hidden">
+                  <div className="flex flex-col gap-3 border-b border-line p-5 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="badge badge-brand">
+                          <ChannelIcon size={11} />
+                          {meta.label}
+                        </span>
+                        <StatusBadge value={campaign.status} />
+                        {campaign.requires_second_approval ? (
+                          <span className="badge badge-neutral">
+                            <ShieldCheck size={11} />
+                            Dual approval
+                          </span>
+                        ) : null}
+                      </div>
+                      <h3 className="display-font mt-2.5 text-lg font-bold text-ink">{campaign.name}</h3>
+                      {campaign.description ? (
+                        <p className="mt-1 text-[0.83rem] leading-relaxed text-muted">{campaign.description}</p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 gap-4 text-center">
+                      <div>
+                        <div className="numeric display-font text-lg font-bold text-ink">{campaign.target_count}</div>
+                        <div className="text-[0.62rem] font-bold uppercase tracking-wide text-subtle">Targets</div>
+                      </div>
+                      <div>
+                        <div className="numeric display-font text-lg font-bold text-ink">{campaign.scenario_count}</div>
+                        <div className="text-[0.62rem] font-bold uppercase tracking-wide text-subtle">Variants</div>
+                      </div>
+                    </div>
                   </div>
-                  <p className="mt-3 text-sm text-slate">{campaign.description}</p>
-                  <div className="mt-4 grid grid-cols-3 gap-3 border-y border-ink/10 py-3 text-sm">
-                    <div>
-                      <div className="font-semibold text-ink">{campaign.channel.toUpperCase()}</div>
-                      <div className="text-slate">Channel</div>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-ink">{campaign.target_count}</div>
-                      <div className="text-slate">Targets</div>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-ink">{campaign.scenario_count}</div>
-                      <div className="text-slate">Variants</div>
-                    </div>
-                  </div>
-                  {latestAttempt ? (
-                    <div className="mt-5 grid gap-3 rounded-lg border border-ink/10 bg-slate-50 p-4 text-sm">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate">{isQrAttempt ? "QR Campaign Asset" : "Email Delivery Details"}</div>
-                      {isQrAttempt ? (
-                        <QrPosterPreview payload={latestAttempt.preview_payload} />
-                      ) : (
-                        <>
-                          <div><span className="font-semibold text-ink">From:</span> {latestAttempt.preview_payload.sender_name ? `${latestAttempt.preview_payload.sender_name} <${latestAttempt.preview_payload.from_email ?? "configured sender"}>` : latestAttempt.preview_payload.from_email ?? "Configured sender"}</div>
-                          <div><span className="font-semibold text-ink">To:</span> {latestAttempt.preview_payload.recipient ?? "Preview only"}</div>
-                          <div><span className="font-semibold text-ink">Subject:</span> {latestAttempt.preview_payload.subject}</div>
-                          <div><span className="font-semibold text-ink">CTA:</span> {latestAttempt.preview_payload.cta_text}</div>
-                          <div className="rounded-md border border-ink/10 bg-white px-3 py-2.5 text-slate">{latestAttempt.preview_payload.body_copy}</div>
-                        </>
-                      )}
+
+                  {attempt ? (
+                    <div className="border-b border-line bg-surface-muted p-5">
+                      <AttemptPreview attempt={attempt} onCopy={copyValue} />
                     </div>
                   ) : null}
-                  <div className="mt-5 flex flex-wrap gap-3">
+
+                  <div className="flex flex-wrap gap-2.5 p-5">
                     {campaign.status === "draft" ? (
-                      <button onClick={() => void runAction(() => requestCampaignApproval(session!.access_token, campaign.id), "Approval requested.")} className="rounded-md bg-ink px-4 py-2.5 text-sm font-semibold text-white">
-                        Request Approval
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        disabled={busy === campaign.id}
+                        onClick={() =>
+                          void runAction(
+                            campaign.id,
+                            () => requestCampaignApproval(session!.access_token, campaign.id),
+                            "Approval requested.",
+                          )
+                        }
+                      >
+                        Request approval
                       </button>
                     ) : null}
+
                     {campaign.status === "pending_approval" ? (
-                      <button onClick={() => void runAction(() => approveCampaign(session!.access_token, campaign.id), "Campaign approved.")} className="rounded-md bg-moss px-4 py-2.5 text-sm font-semibold text-white">
+                      <button
+                        type="button"
+                        className="btn-primary btn-sm"
+                        disabled={busy === campaign.id}
+                        onClick={() =>
+                          void runAction(
+                            campaign.id,
+                            () => approveCampaign(session!.access_token, campaign.id),
+                            "Approval recorded. A second admin may still be required.",
+                          )
+                        }
+                      >
+                        <CheckCircle2 size={13} />
                         Approve
                       </button>
                     ) : null}
-                    {(campaign.status === "approved" || campaign.status === "scheduled") ? (
-                      <button onClick={() => void runAction(() => launchCampaignSandbox(session!.access_token, campaign.id), "Campaign asset generated.")} className="rounded-md bg-tide px-4 py-2.5 text-sm font-semibold text-white">
-                        {campaign.channel === "qr" ? "Generate QR Asset" : campaign.channel === "sms" ? "Create SMS Asset" : "Create Tracking Link"}
+
+                    {launchable ? (
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        disabled={busy === campaign.id}
+                        onClick={() =>
+                          void runAction(
+                            campaign.id,
+                            () => launchCampaignSandbox(session!.access_token, campaign.id),
+                            "Sandbox assets generated. Nothing was sent.",
+                          )
+                        }
+                      >
+                        Preview in sandbox
                       </button>
                     ) : null}
-                    {isQrAttempt ? (
-                      <>
-                        <button onClick={() => copyValue(latestAttempt?.preview_payload.scan_url)} className="rounded-md border border-ink/10 bg-white px-4 py-2.5 text-sm font-semibold text-ink">
-                          Copy QR Link
-                        </button>
-                        <a href={latestAttempt?.preview_payload.qr_image_data_url} download="breachsim-qr.png" className="rounded-md border border-ink/10 bg-white px-4 py-2.5 text-sm font-semibold text-ink">
-                          Download QR
-                        </a>
-                      </>
-                    ) : null}
-                    {(campaign.status === "approved" || campaign.status === "scheduled" || campaign.status === "active") && campaign.channel === "email" ? (
-                      <button onClick={() => void runAction(() => deliverCampaignEmail(session!.access_token, campaign.id), "Live emails sent.")} className="rounded-md bg-ember px-4 py-2.5 text-sm font-semibold text-white">
-                        Send Live Email
+
+                    {deliverable ? (
+                      <button
+                        type="button"
+                        className="btn-primary btn-sm"
+                        disabled={busy === campaign.id}
+                        onClick={() =>
+                          void runAction(
+                            campaign.id,
+                            () => deliverCampaign(session!.access_token, campaign.id),
+                            `${meta.label} campaign delivered.`,
+                          )
+                        }
+                      >
+                        {busy === campaign.id ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <Rocket size={13} />
+                        )}
+                        {meta.deliverLabel}
                       </button>
                     ) : null}
+
+                    {payload.qr_image_data_url ? (
+                      <a
+                        href={payload.qr_image_data_url}
+                        download="breachsim-qr.png"
+                        className="btn-secondary btn-sm"
+                      >
+                        <Download size={13} />
+                        Download QR
+                      </a>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      className="btn-danger btn-sm ml-auto"
+                      disabled={busy === campaign.id}
+                      onClick={() => void handleDelete(campaign)}
+                      title="Delete this campaign"
+                    >
+                      {busy === campaign.id ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={13} />
+                      )}
+                      Delete
+                    </button>
                   </div>
-                </div>
+                </article>
               );
-            })}
-          </div>
-        </Panel>
+            })
+          )}
+        </section>
       </div>
 
-      <Panel>
-        <div className="section-title">Delivery Attempts</div>
-        <div className="mt-5 space-y-3">
-          {attempts.map((attempt) => (
-            <div key={attempt.id} className="enterprise-card rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold">{attempt.preview_payload.subject}</div>
-                <StatusBadge value={attempt.status} />
-              </div>
-              {attempt.preview_payload.qr_image_data_url ? (
-                <div className="mt-4">
-                  <QrPosterPreview payload={attempt.preview_payload} compact />
-                </div>
-              ) : (
-                <>
-                  <div className="mt-3 text-sm text-slate">From: {attempt.preview_payload.sender_name ? `${attempt.preview_payload.sender_name} <${attempt.preview_payload.from_email ?? "configured sender"}>` : attempt.preview_payload.from_email ?? "Configured sender"}</div>
-                  <div className="mt-3 text-sm text-slate">Recipient: {attempt.preview_payload.recipient ?? "preview only"}</div>
-                  <div className="mt-1 text-sm text-slate">Preview URL: <span className="font-semibold text-ink">{attempt.preview_payload.preview_url}</span></div>
-                </>
-              )}
-              <div className="mt-3 rounded-md border border-ink/10 bg-white px-3 py-2.5 text-sm leading-6 text-slate">{attempt.preview_payload.body_copy}</div>
-              {attempt.preview_payload.error ? <div className="mt-3 rounded-md bg-ember/10 px-3 py-2.5 text-sm text-ember">{attempt.preview_payload.error}</div> : null}
-            </div>
-          ))}
+      {/* Delivery ledger */}
+      <section className="card overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+          <h2 className="display-font text-lg font-bold text-ink">Delivery attempts</h2>
+          <span className="badge badge-neutral">{attempts.length} recorded</span>
         </div>
-      </Panel>
-    </>
+        {attempts.length === 0 ? (
+          <p className="px-5 py-12 text-center text-[0.85rem] text-muted">
+            No delivery attempts yet. Launch a campaign to populate the ledger.
+          </p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {attempts.map((attempt) => {
+              const meta = channelMeta(attempt.channel);
+              const ChannelIcon = meta.icon;
+              return (
+                <li key={attempt.id} className="p-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="badge badge-brand">
+                      <ChannelIcon size={11} />
+                      {meta.label}
+                    </span>
+                    <StatusBadge value={attempt.status} />
+                    {attempt.sandbox_mode ? <span className="badge badge-neutral">Sandbox</span> : null}
+                    <span className="ml-auto text-[0.74rem] text-subtle">
+                      {attempt.delivered_at ? new Date(attempt.delivered_at).toLocaleString() : "Not delivered"}
+                    </span>
+                  </div>
+                  <div className="mt-2.5 text-[0.9rem] font-semibold text-ink">
+                    {attempt.preview_payload.subject ?? "Simulation asset"}
+                  </div>
+                  <div className="mt-3">
+                    <AttemptPreview attempt={attempt} onCopy={copyValue} compact />
+                  </div>
+                  {attempt.preview_payload.sandbox_reason ? (
+                    <p className="mt-3 rounded-lg border border-caution/25 bg-caution/8 px-3 py-2 text-[0.8rem] leading-relaxed text-caution">
+                      {attempt.preview_payload.sandbox_reason}
+                    </p>
+                  ) : null}
+                  {attempt.preview_payload.error ? (
+                    <p className="mt-3 rounded-lg border border-breach/20 bg-breach/8 px-3 py-2 text-[0.8rem] text-breach">
+                      {attempt.preview_payload.error}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </div>
   );
 }
 
-function ModuleTile({ title, value, detail }: { title: string; value: string; detail: string }) {
+/* ------------------------------------------------- channel-aware previews */
+
+function AttemptPreview({
+  attempt,
+  onCopy,
+  compact = false,
+}: {
+  attempt: DeliveryAttempt;
+  onCopy: (value?: string) => void;
+  compact?: boolean;
+}) {
+  const payload = attempt.preview_payload ?? {};
+
+  if (attempt.channel === "qr") {
+    return <QrPosterPreview payload={payload} compact={compact} />;
+  }
+
+  if (attempt.channel === "vishing") {
+    return (
+      <div className="space-y-2.5">
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <Row label="Caller ID" value={payload.caller_id_display} mono />
+          <Row label="Presents as" value={payload.spoofed_display_name} />
+          <Row label="Call reason" value={payload.call_reason} />
+          <Row label="Decision points" value={payload.script_step_count} />
+        </div>
+        <LinkRow label="Call session" url={payload.call_url} onCopy={onCopy} />
+        {payload.delivery_note ? <Note text={payload.delivery_note} /> : null}
+      </div>
+    );
+  }
+
+  if (attempt.channel === "deepfake") {
+    return (
+      <div className="space-y-2.5">
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <Row label="Impersonates" value={payload.sender_display_name} />
+          <Row label="Modality" value={String(payload.modality ?? "").replace(/_/g, " ")} />
+          <Row label="Requested action" value={payload.requested_action} />
+          <Row label="Synthetic tells" value={payload.artifact_count} />
+        </div>
+        <LinkRow label="Media session" url={payload.media_url} onCopy={onCopy} />
+        {payload.delivery_note ? <Note text={payload.delivery_note} /> : null}
+      </div>
+    );
+  }
+
+  if (attempt.channel === "sms") {
+    return (
+      <div className="space-y-2.5">
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <Row label="Recipient" value={payload.recipient ?? "Preview only"} mono />
+          <Row
+            label="Length"
+            value={
+              payload.character_count
+                ? `${payload.character_count} chars · ${payload.encoding ?? "GSM-7"} · ${payload.segment_count} segment(s)`
+                : "—"
+            }
+          />
+        </div>
+        {payload.message_text ? (
+          <p className="rounded-lg border border-line bg-surface p-3 text-[0.83rem] leading-relaxed text-ink">
+            {payload.message_text}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-lg border border-ink/10 bg-slate-50 p-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate">{title}</div>
-      <div className="mt-2 text-lg font-semibold text-ink">{value}</div>
-      <div className="mt-1 text-xs text-slate">{detail}</div>
+    <div className="space-y-2.5">
+      <div className="grid gap-2.5 sm:grid-cols-2">
+        <Row
+          label="From"
+          value={
+            payload.sender_name
+              ? `${payload.sender_name} <${payload.from_email ?? "configured sender"}>`
+              : (payload.from_email ?? "Configured sender")
+          }
+        />
+        <Row label="To" value={payload.recipient ?? "Preview only"} mono />
+        <Row label="Subject" value={payload.subject} />
+        <Row label="CTA" value={payload.cta_text} />
+      </div>
+      {payload.body_copy ? (
+        <p className="whitespace-pre-line rounded-lg border border-line bg-surface p-3 text-[0.83rem] leading-relaxed text-ink">
+          {payload.body_copy}
+        </p>
+      ) : null}
+      <LinkRow label="Tracking link" url={payload.preview_url} onCopy={onCopy} />
+    </div>
+  );
+}
+
+function Row({ label, value, mono }: { label: string; value?: React.ReactNode; mono?: boolean }) {
+  return (
+    <div>
+      <div className="eyebrow">{label}</div>
+      <div className={clsx("mt-0.5 text-[0.83rem] font-medium text-ink", mono && "numeric font-mono text-[0.79rem]")}>
+        {value ?? "—"}
+      </div>
+    </div>
+  );
+}
+
+function LinkRow({
+  label,
+  url,
+  onCopy,
+}: {
+  label: string;
+  url?: string;
+  onCopy: (value?: string) => void;
+}) {
+  if (!url) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
+      <span className="eyebrow">{label}</span>
+      <span className="numeric min-w-0 flex-1 truncate font-mono text-[0.76rem] text-muted">{url}</span>
+      <button type="button" className="btn-ghost btn-sm" onClick={() => onCopy(url)}>
+        <Copy size={12} />
+        Copy
+      </button>
+      <a href={url} target="_blank" rel="noreferrer" className="btn-ghost btn-sm">
+        <ExternalLink size={12} />
+        Open
+      </a>
+    </div>
+  );
+}
+
+function Note({ text }: { text: string }) {
+  return (
+    <p className="rounded-lg border border-brand-500/20 bg-brand-500/6 px-3 py-2 text-[0.78rem] leading-relaxed text-muted">
+      {text}
+    </p>
+  );
+}
+
+function Stat({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: number;
+  tone?: string;
+}) {
+  return (
+    <div className="card-muted min-w-[94px] px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-subtle">
+        <Icon size={12} />
+        <span className="text-[0.58rem] font-bold uppercase tracking-[0.1em]">{label}</span>
+      </div>
+      <div className={clsx("numeric display-font mt-1 text-lg font-bold", tone ?? "text-ink")}>{value}</div>
     </div>
   );
 }

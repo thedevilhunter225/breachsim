@@ -11,7 +11,7 @@ export function Panel({
   return (
     <section
       className={clsx(
-        "enterprise-card rounded-lg p-5",
+        "enterprise-card rounded-xl p-5 md:p-6",
         className,
       )}
     >

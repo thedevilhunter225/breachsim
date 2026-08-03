@@ -6,10 +6,12 @@ import { RiskBandChart, TrendChart } from "@/components/charts";
 import { MetricCard } from "@/components/metric-card";
 import { Panel } from "@/components/panel";
 import { useSession } from "@/components/session-provider";
+import { useTheme } from "@/components/theme-provider";
 import { DashboardData, getDashboard } from "@/lib/client-api";
 
 export function AnalyticsConsole() {
   const { session } = useSession();
+  const { theme } = useTheme();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
 
   useEffect(() => {
@@ -23,20 +25,18 @@ export function AnalyticsConsole() {
 
   return (
     <>
-      <Panel>
-        <div className="section-title">Analytics</div>
-        <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <section className="app-surface rounded-xl p-5 md:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="display-font text-4xl font-semibold tracking-[-0.04em]">Organization-wide campaign outcomes and engagement trends</h2>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate">
-              Use analytics for the broad picture: what happened across campaigns, which channels performed, and how employee engagement and reporting rates are moving at the organization level.
-            </p>
+            <div className="section-title">Performance analytics</div>
+            <h1 className="display-font mt-2 text-2xl font-semibold tracking-[-0.035em] text-ink">Campaign outcomes</h1>
+            <p className="mt-1.5 text-sm text-slate">Compare delivery, engagement, reporting and channel performance.</p>
           </div>
-          <div className="rounded-[1.4rem] bg-sand px-4 py-3 text-sm text-slate">
-            Most exposed department: <span className="font-semibold text-ink">{dashboard.vulnerable_departments[0]?.department ?? "None yet"}</span>
+          <div className="rounded-xl border border-ink/[0.08] bg-sand/55 px-4 py-3 text-sm text-slate">
+            Most exposed: <span className="font-semibold text-ink">{dashboard.vulnerable_departments[0]?.department ?? "No data"}</span>
           </div>
         </div>
-      </Panel>
+      </section>
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard label="Top Vulnerable Department" value={dashboard.vulnerable_departments[0]?.department ?? "-"} tone="ember" />
@@ -49,57 +49,89 @@ export function AnalyticsConsole() {
           <div className="section-title">Event Trend</div>
           <h3 className="display-font mt-3 text-2xl font-semibold tracking-[-0.03em]">Weekly interaction volume</h3>
           <div className="mt-4">
-            <TrendChart data={dashboard.trend.map((point) => ({ date: point.date, value: point.value }))} />
+            <TrendChart data={dashboard.trend.map((point) => ({ date: point.date, value: point.value }))} theme={theme} compact />
           </div>
         </Panel>
         <Panel>
           <div className="section-title">Risk Banding</div>
           <h3 className="display-font mt-3 text-2xl font-semibold tracking-[-0.03em]">Employee risk distribution</h3>
           <div className="mt-4">
-            <RiskBandChart data={dashboard.risk_distribution} />
+            <RiskBandChart data={dashboard.risk_distribution} theme={theme} compact />
           </div>
         </Panel>
       </div>
 
       <Panel>
         <div className="section-title">Channel Breakdown</div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {dashboard.channel_performance.map((channel) => (
-            <div key={channel.channel} className="rounded-[1.45rem] border border-ink/10 bg-white/82 p-5">
-              <div className="text-xs uppercase tracking-[0.18em] text-slate">{channel.channel}</div>
-              <div className="mt-3 display-font text-3xl font-semibold uppercase tracking-[-0.03em] text-ink">{channel.delivered}</div>
-              <div className="text-sm text-slate">Delivered</div>
-              <div className="mt-5 grid grid-cols-2 gap-2 text-sm">
-                <MiniMetric label="Clicks" value={channel.clicks} tone="ember" />
-                <MiniMetric label="Reports" value={channel.reports} tone="tide" />
+        <p className="mt-1.5 text-[0.82rem] leading-relaxed text-muted">
+          Each channel fails in its own vocabulary — a click on email, a scan on QR, a disclosure on a
+          call, trusting a fake on deepfake. Rates are share of people reached, not share of events.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {dashboard.channel_performance.map((channel) => {
+            const risky = channel.risky_actions ?? channel.clicks;
+            const protective = channel.protective_actions ?? channel.reports;
+            const untested = channel.delivered === 0;
+
+            return (
+              <div
+                key={channel.channel}
+                className={`card-muted p-4 ${untested ? "opacity-60" : ""}`}
+              >
+                <div className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-subtle">
+                  {formatChannel(channel.channel)}
+                </div>
+                <div className="numeric display-font mt-2 text-2xl font-bold text-ink">{channel.delivered}</div>
+                <div className="text-[0.78rem] text-muted">Delivered</div>
+
+                {untested ? (
+                  <div className="mt-4 text-[0.74rem] leading-relaxed text-subtle">Not yet exercised</div>
+                ) : (
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <MiniMetric label="Risky" value={risky} rate={channel.failure_rate} tone="breach" />
+                    <MiniMetric label="Safe" value={protective} rate={channel.resilience_rate} tone="signal" />
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Panel>
     </>
   );
 }
 
+function formatChannel(channel: string) {
+  if (channel === "sms") return "SMS";
+  if (channel === "qr") return "QR";
+  if (channel === "vishing") return "Voice";
+  if (channel === "deepfake") return "Deepfake";
+  return channel.charAt(0).toUpperCase() + channel.slice(1);
+}
+
 function MiniMetric({
   label,
   value,
+  rate,
   tone,
 }: {
   label: string;
   value: number;
-  tone: "ember" | "tide" | "moss";
+  rate?: number;
+  tone: "breach" | "signal";
 }) {
   const toneMap = {
-    ember: "text-ember bg-ember/8",
-    tide: "text-tide bg-tide/8",
-    moss: "text-moss bg-moss/12",
+    breach: "text-breach bg-breach/8",
+    signal: "text-signal bg-signal/10",
   };
 
   return (
-    <div className={`rounded-[1rem] px-3 py-3 ${toneMap[tone]}`}>
-      <div className="text-[0.62rem] uppercase tracking-[0.18em]">{label}</div>
-      <div className="mt-2 text-lg font-semibold">{value}</div>
+    <div className={`rounded-lg px-2.5 py-2 ${toneMap[tone]}`}>
+      <div className="text-[0.6rem] font-bold uppercase tracking-[0.12em]">{label}</div>
+      <div className="numeric mt-1 text-base font-bold">{value}</div>
+      {typeof rate === "number" ? (
+        <div className="numeric text-[0.65rem] opacity-75">{rate}% of people</div>
+      ) : null}
     </div>
   );
 }

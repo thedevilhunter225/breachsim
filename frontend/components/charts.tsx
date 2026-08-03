@@ -5,41 +5,52 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Too
 
 type ChartTheme = "light" | "dark";
 
+/** Chart palette drawn from the BreachSim brand ramp so charts match the shell. */
 function chartColors(theme: ChartTheme) {
   return theme === "dark"
     ? {
-        axis: "rgba(236, 244, 255, 0.55)",
-        grid: "rgba(236, 244, 255, 0.09)",
-        area: "#70e8ff",
-        bar: "#6de2f6",
-        tooltipBg: "rgba(9, 17, 31, 0.94)",
-        tooltipBorder: "rgba(255,255,255,0.08)",
-        tooltipText: "#f5fbff",
+        axis: "rgba(231, 239, 250, 0.5)",
+        grid: "rgba(231, 239, 250, 0.08)",
+        area: "#4fa3ff",
+        bar: "#4fa3ff",
+        tooltipBg: "rgba(12, 25, 48, 0.96)",
+        tooltipBorder: "rgba(255,255,255,0.1)",
+        tooltipText: "#e7effa",
       }
     : {
-        axis: "#5f6777",
-        grid: "rgba(19,23,34,0.08)",
-        area: "#0f6877",
-        bar: "#da5a2a",
+        axis: "#5c6c85",
+        grid: "rgba(12,21,40,0.07)",
+        area: "#2b8bff",
+        bar: "#1e6fe0",
         tooltipBg: "rgba(255,255,255,0.98)",
-        tooltipBorder: "rgba(19,23,34,0.08)",
-        tooltipText: "#131722",
+        tooltipBorder: "rgba(12,21,40,0.09)",
+        tooltipText: "#0c1528",
       };
 }
+
+/** Risk bands escalate from safe to critical, so the bars should too. */
+const RISK_BAND_COLORS: Record<string, string> = {
+  "0-25": "#12a594",
+  "26-50": "#2b8bff",
+  "51-75": "#d68f0a",
+  "76-100": "#e5484d",
+};
 
 export function TrendChart({
   data,
   theme = "light",
+  compact = false,
 }: {
   data: Array<{ date: string; value: number }>;
   theme?: ChartTheme;
+  compact?: boolean;
 }) {
   const id = useId().replace(/:/g, "");
   const gradientId = `${id}-risk`;
   const colors = chartColors(theme);
 
   return (
-    <div className="h-72">
+    <div className={compact ? "h-60" : "h-72"}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <defs>
@@ -48,9 +59,9 @@ export function TrendChart({
               <stop offset="95%" stopColor={colors.area} stopOpacity={0.03} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="4 4" stroke={colors.grid} />
-          <XAxis dataKey="date" tickFormatter={(value) => value.slice(5, 10)} stroke={colors.axis} />
-          <YAxis stroke={colors.axis} />
+          <CartesianGrid vertical={false} strokeDasharray="3 5" stroke={colors.grid} />
+          <XAxis dataKey="date" tickFormatter={(value) => value.slice(5, 10)} stroke={colors.axis} tickLine={false} axisLine={false} fontSize={11} />
+          <YAxis stroke={colors.axis} tickLine={false} axisLine={false} fontSize={11} width={32} allowDecimals={false} />
           <Tooltip
             contentStyle={{
               backgroundColor: colors.tooltipBg,
@@ -72,19 +83,27 @@ export function TrendChart({
 export function RiskBandChart({
   data,
   theme = "light",
+  compact = false,
 }: {
   data: Array<{ band: string; count: number }>;
   theme?: ChartTheme;
+  compact?: boolean;
 }) {
   const colors = chartColors(theme);
+  // Recharts reads a per-datum `fill`, which colour-codes the bands without needing
+  // <Cell> children (those render an empty rectangle group in this version).
+  const banded = data.map((entry) => ({
+    ...entry,
+    fill: RISK_BAND_COLORS[entry.band] ?? colors.bar,
+  }));
 
   return (
-    <div className="h-72">
+    <div className={compact ? "h-48" : "h-72"}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data}>
-          <CartesianGrid strokeDasharray="4 4" stroke={colors.grid} />
-          <XAxis dataKey="band" stroke={colors.axis} />
-          <YAxis stroke={colors.axis} />
+        <BarChart data={banded}>
+          <CartesianGrid vertical={false} strokeDasharray="3 5" stroke={colors.grid} />
+          <XAxis dataKey="band" stroke={colors.axis} tickLine={false} axisLine={false} fontSize={11} />
+          <YAxis stroke={colors.axis} tickLine={false} axisLine={false} fontSize={11} width={28} allowDecimals={false} />
           <Tooltip
             contentStyle={{
               backgroundColor: colors.tooltipBg,
@@ -96,7 +115,7 @@ export function RiskBandChart({
             labelStyle={{ color: colors.tooltipText }}
             itemStyle={{ color: colors.tooltipText }}
           />
-          <Bar dataKey="count" fill={colors.bar} radius={[12, 12, 0, 0]} />
+          <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={44} fill={colors.bar} />
         </BarChart>
       </ResponsiveContainer>
     </div>

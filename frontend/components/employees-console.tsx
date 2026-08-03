@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Building2, FileUp, Pencil, Plus, Search, ShieldAlert, UserRound, UsersRound, X, type LucideIcon } from "lucide-react";
 
 import { TrendChart } from "@/components/charts";
 import { Panel } from "@/components/panel";
@@ -45,6 +46,8 @@ export function EmployeesConsole() {
   const [importResult, setImportResult] = useState<EmployeeImportResult | null>(null);
   const [selectedReport, setSelectedReport] = useState<EmployeeRiskReport | null>(null);
   const [reportLoadingId, setReportLoadingId] = useState<string | null>(null);
+  const [composer, setComposer] = useState<"department" | "employee" | "import" | null>(null);
+  const [search, setSearch] = useState("");
 
   async function loadData() {
     if (!session) return;
@@ -96,6 +99,7 @@ export function EmployeesConsole() {
     setForm({ ...emptyForm, department_id: departments[0]?.id ?? "" });
     setImportResult(null);
     await loadData();
+    setComposer(null);
   }
 
   async function handleCreateDepartment() {
@@ -109,6 +113,7 @@ export function EmployeesConsole() {
     setImportResult(null);
     await loadData();
     setForm((current) => ({ ...current, department_id: department.id }));
+    setComposer(null);
   }
 
   async function handleImport() {
@@ -150,48 +155,77 @@ export function EmployeesConsole() {
       approved_public_profile_summary: employee.approved_public_profile_summary ?? "",
     });
     setMessage(`Editing ${employee.full_name}. Save to update context and targeting data.`);
+    setComposer("employee");
   }
 
   function cancelEditing() {
     setEditingEmployeeId(null);
     setForm({ ...emptyForm, department_id: departments[0]?.id ?? "" });
     setMessage("Edit cancelled.");
+    setComposer(null);
   }
 
   const hasDepartments = departments.length > 0;
   const hasEmployees = employees.length > 0;
+  const filteredEmployees = employees.filter((employee) => {
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+    return [employee.full_name, employee.email, employee.employee_id, employee.department_name, employee.role_title]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
 
   return (
     <>
-      <Panel>
-        <div className="section-title">Organization Directory</div>
-        <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <section className="app-surface rounded-xl p-5 md:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-3xl font-semibold">Build the directory from company-owned data</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-7 text-slate">
-              No sample departments or employees are preloaded now. The company admin creates departments, adds employees, and controls the entire phishing simulation directory from this workspace.
-            </p>
+            <div className="section-title">Organization directory</div>
+            <h1 className="display-font mt-2 text-2xl font-semibold tracking-[-0.035em] text-ink">People and departments</h1>
+            <p className="mt-1.5 text-sm text-slate">Manage targeting context, ownership and employee risk records.</p>
           </div>
-          <div className="rounded-[1.5rem] bg-white/70 px-4 py-3 text-sm text-slate">
-            Live employee count: <span className="font-semibold text-ink">{employees.length}</span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setComposer("department")} className="app-secondary-button">
+              <Building2 size={15} /> New department
+            </button>
+            <button type="button" onClick={() => setComposer("import")} className="app-secondary-button">
+              <FileUp size={15} /> Import CSV
+            </button>
+            <button type="button" onClick={() => setComposer("employee")} className="app-primary-button" disabled={!hasDepartments}>
+              <Plus size={15} /> Add employee
+            </button>
           </div>
         </div>
-      </Panel>
+      </section>
 
-      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <Panel>
-          <div className="section-title">Admin Inputs</div>
+      <section className="grid gap-3 sm:grid-cols-3">
+        <DirectoryStat icon={UsersRound} label="Employees" value={employees.length} />
+        <DirectoryStat icon={Building2} label="Departments" value={departments.length} />
+        <DirectoryStat icon={ShieldAlert} label="Elevated risk" value={employees.filter((employee) => employee.risk_score >= 60).length} />
+      </section>
+
+      <div className={composer ? "grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]" : "grid gap-4"}>
+        {composer ? <Panel className="self-start xl:sticky xl:top-[88px] xl:max-h-[calc(100vh-112px)] xl:overflow-y-auto">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="section-title">Directory management</div>
+              <h2 className="display-font mt-2 text-lg font-semibold text-ink">
+                {composer === "department" ? "Create department" : composer === "import" ? "Import employees" : editingEmployeeId ? "Edit employee" : "Add employee"}
+              </h2>
+            </div>
+            <button type="button" onClick={() => { setComposer(null); setEditingEmployeeId(null); }} className="app-icon-button" aria-label="Close editor"><X size={16} /></button>
+          </div>
           <div className="mt-4 grid gap-4">
-            <div className="rounded-[1.5rem] border border-ink/10 bg-white/70 p-4">
+            {composer === "department" ? <div className="rounded-xl border border-ink/10 bg-white/70 p-4">
               <div className="text-sm font-semibold text-ink">Create Department</div>
               <div className="mt-3 grid gap-3">
-                <input value={departmentForm.name} onChange={(event) => setDepartmentForm({ ...departmentForm, name: event.target.value })} placeholder="Department name" className="rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none" />
-                <input value={departmentForm.code} onChange={(event) => setDepartmentForm({ ...departmentForm, code: event.target.value.toUpperCase() })} placeholder="Department code" className="rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none" />
-                <button onClick={handleCreateDepartment} className="rounded-2xl bg-tide px-4 py-3 font-semibold text-white">Save Department</button>
+                <input value={departmentForm.name} onChange={(event) => setDepartmentForm({ ...departmentForm, name: event.target.value })} placeholder="Department name" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <input value={departmentForm.code} onChange={(event) => setDepartmentForm({ ...departmentForm, code: event.target.value.toUpperCase() })} placeholder="Department code" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <button onClick={handleCreateDepartment} className="app-primary-button">Save department</button>
               </div>
-            </div>
+            </div> : null}
 
-            <div className="rounded-[1.5rem] border border-ink/10 bg-white/70 p-4">
+            {composer === "employee" ? <div className="rounded-xl border border-ink/10 bg-white/70 p-4">
               <div className="text-sm font-semibold text-ink">{editingEmployeeId ? "Edit Employee" : "Add Employee"}</div>
               <div className="mt-3 grid gap-4">
                 {!hasDepartments ? (
@@ -199,36 +233,36 @@ export function EmployeesConsole() {
                     Create at least one department first. Employee onboarding stays disabled until a department exists.
                   </div>
                 ) : null}
-                <input value={form.employee_id} onChange={(event) => setForm({ ...form, employee_id: event.target.value })} placeholder="Employee ID" disabled={Boolean(editingEmployeeId)} className="rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none disabled:bg-sand disabled:text-slate" />
-                <input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} placeholder="Full name" className="rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none" />
-                <input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="Email address" className="rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none" />
-                <input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="Phone number" className="rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none" />
-                <select value={form.department_id} onChange={(event) => setForm({ ...form, department_id: event.target.value })} disabled={!hasDepartments} className="rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none disabled:bg-sand disabled:text-slate">
+                <input value={form.employee_id} onChange={(event) => setForm({ ...form, employee_id: event.target.value })} placeholder="Employee ID" disabled={Boolean(editingEmployeeId)} className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none disabled:bg-sand disabled:text-slate" />
+                <input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} placeholder="Full name" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="Email address" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="Phone number" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <select value={form.department_id} onChange={(event) => setForm({ ...form, department_id: event.target.value })} disabled={!hasDepartments} className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none disabled:bg-sand disabled:text-slate">
                   {departments.map((department) => (
                     <option key={department.id} value={department.id}>{department.name}</option>
                   ))}
                 </select>
-                <input value={form.role_title} onChange={(event) => setForm({ ...form, role_title: event.target.value })} placeholder="Role title" className="rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none" />
-                <textarea value={form.approved_context_summary} onChange={(event) => setForm({ ...form, approved_context_summary: event.target.value })} placeholder="Approved context summary" className="min-h-28 rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none" />
-                <textarea value={form.approved_public_profile_summary} onChange={(event) => setForm({ ...form, approved_public_profile_summary: event.target.value })} placeholder="Optional provided profile summary" className="min-h-24 rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none" />
+                <input value={form.role_title} onChange={(event) => setForm({ ...form, role_title: event.target.value })} placeholder="Role title" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <textarea value={form.approved_context_summary} onChange={(event) => setForm({ ...form, approved_context_summary: event.target.value })} placeholder="Approved targeting context" className="min-h-24 rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <textarea value={form.approved_public_profile_summary} onChange={(event) => setForm({ ...form, approved_public_profile_summary: event.target.value })} placeholder="Optional provided profile summary" className="min-h-20 rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
                 <div className="flex flex-wrap gap-3">
-                  <button onClick={handleCreate} disabled={!hasDepartments} className="rounded-2xl bg-ink px-4 py-3 font-semibold text-mist disabled:bg-slate/40 disabled:text-white/70">{editingEmployeeId ? "Update Employee" : "Save Employee"}</button>
+                  <button onClick={handleCreate} disabled={!hasDepartments} className="app-primary-button">{editingEmployeeId ? "Update employee" : "Save employee"}</button>
                   {editingEmployeeId ? (
-                    <button onClick={cancelEditing} className="rounded-2xl border border-ink/10 bg-white px-4 py-3 font-semibold text-ink">Cancel Edit</button>
+                    <button onClick={cancelEditing} className="app-secondary-button">Cancel</button>
                   ) : null}
                 </div>
               </div>
-            </div>
+            </div> : null}
 
-            <div className="rounded-[1.5rem] border border-ink/10 bg-white/70 p-4">
+            {composer === "import" ? <div className="rounded-xl border border-ink/10 bg-white/70 p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="text-sm font-semibold text-ink">CSV Import</div>
-                <label className="rounded-2xl border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink">
-                  Upload CSV
+                <label className="app-secondary-button cursor-pointer">
+                  <FileUp size={15} /> Upload CSV
                   <input type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => void handleFileUpload(event.target.files?.[0] ?? null)} />
                 </label>
               </div>
-              <textarea value={csvText} onChange={(event) => setCsvText(event.target.value)} className="mt-3 min-h-44 rounded-2xl border border-ink/10 bg-white px-4 py-3 font-mono text-xs outline-none" />
+              <textarea value={csvText} onChange={(event) => setCsvText(event.target.value)} className="mt-3 min-h-52 w-full rounded-lg border border-ink/10 bg-white px-3 py-2.5 font-mono text-xs outline-none" />
               <div className="mt-3 text-xs leading-6 text-slate">
                 Expected columns: `employee_id, full_name, email, phone, department, role_title, approved_context_summary, consent_status`
               </div>
@@ -244,49 +278,63 @@ export function EmployeesConsole() {
                   ))}
                 </div>
               ) : null}
-              <button onClick={handleImport} className="mt-4 rounded-2xl bg-moss px-4 py-3 font-semibold text-white">Import CSV</button>
-            </div>
+              <button onClick={handleImport} className="app-primary-button mt-4">Import employees</button>
+            </div> : null}
 
             {message ? <div className="rounded-2xl bg-moss/10 px-4 py-3 text-sm text-moss">{message}</div> : null}
           </div>
-        </Panel>
+        </Panel> : null}
 
         <Panel className="overflow-hidden p-0">
+          <div className="flex flex-col gap-3 border-b border-ink/[0.08] px-5 py-4 md:flex-row md:items-center md:justify-between md:px-6">
+            <div>
+              <div className="text-sm font-semibold text-ink">Employee records</div>
+              <div className="mt-0.5 text-xs text-slate">{filteredEmployees.length} of {employees.length} people</div>
+            </div>
+            <label className="relative block w-full md:w-80">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people, roles or teams" className="h-10 w-full rounded-lg border border-ink/10 bg-white pl-9 pr-3 text-sm outline-none" />
+            </label>
+          </div>
           {hasEmployees ? (
             <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-white/80">
-                  <tr className="text-slate">
-                    <th className="px-5 py-4">Employee</th>
-                    <th className="px-5 py-4">Department</th>
-                    <th className="px-5 py-4">Status</th>
-                    <th className="px-5 py-4">Risk</th>
-                    <th className="px-5 py-4">Themes</th>
-                    <th className="px-5 py-4">Actions</th>
+              <table className="data-table min-w-full text-left text-sm">
+                <thead>
+                  <tr>
+                    <th className="px-5 py-3 md:px-6">Employee</th>
+                    <th className="px-4 py-3">Department</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Risk</th>
+                    <th className="px-5 py-3 text-right md:px-6">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {employees.map((employee) => (
-                    <tr key={employee.id} className="border-t border-ink/10 bg-white/55">
-                      <td className="px-5 py-4">
-                        <div className="font-semibold">{employee.full_name}</div>
-                        <div className="text-slate">{employee.email}</div>
-                        <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate">{employee.role_title}</div>
+                  {filteredEmployees.map((employee) => (
+                    <tr key={employee.id}>
+                      <td className="px-5 py-3.5 md:px-6">
+                        <div className="flex items-center gap-3">
+                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-tide/[0.08] text-xs font-bold text-tide">
+                            {employee.full_name.split(" ").map((part) => part[0] ?? "").join("").slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-ink">{employee.full_name}</div>
+                            <div className="mt-0.5 max-w-[280px] truncate text-xs text-slate">{employee.email} · {employee.role_title}</div>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-5 py-4">{employee.department_name}</td>
-                      <td className="px-5 py-4"><StatusBadge value={employee.status} /></td>
-                      <td className="px-5 py-4 font-semibold text-ember">{employee.risk_score}</td>
-                      <td className="px-5 py-4 text-slate">{employee.latest_context_profile?.likely_scenario_themes?.join(", ")}</td>
-                      <td className="px-5 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          <button onClick={() => startEditing(employee)} className="rounded-2xl border border-ink/10 bg-white px-3 py-2 text-sm font-semibold text-ink">
-                            Edit Context
+                      <td className="px-4 py-3.5 text-slate">{employee.department_name ?? "Unassigned"}</td>
+                      <td className="px-4 py-3.5"><StatusBadge value={employee.status} /></td>
+                      <td className="px-4 py-3.5"><span className="font-semibold text-ink">{employee.risk_score}</span><span className="ml-1 text-xs text-slate">/100</span></td>
+                      <td className="px-5 py-3.5 md:px-6">
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => startEditing(employee)} className="app-icon-button" title="Edit employee" aria-label={`Edit ${employee.full_name}`}>
+                            <Pencil size={15} />
                           </button>
                           <button
                             onClick={() => void loadEmployeeReport(employee.id)}
-                            className="rounded-2xl bg-tide px-3 py-2 text-sm font-semibold text-white"
+                            className="app-secondary-button whitespace-nowrap"
                           >
-                            {reportLoadingId === employee.id ? "Loading..." : "View Risk Report"}
+                            {reportLoadingId === employee.id ? "Loading..." : "Risk profile"}
                           </button>
                         </div>
                       </td>
@@ -296,13 +344,12 @@ export function EmployeesConsole() {
               </table>
             </div>
           ) : (
-            <div className="grid min-h-[340px] place-items-center bg-white/55 px-6 py-10 text-center">
-              <div className="max-w-xl">
-                <div className="text-xs uppercase tracking-[0.2em] text-slate">Empty Directory</div>
-                <h3 className="mt-4 text-3xl font-semibold text-ink">No employees have been added yet</h3>
-                <p className="mt-3 text-sm leading-7 text-slate">
-                  Start by creating a department, then add employees manually or import them with CSV. Risk reports and phishing targeting will appear once the directory has real company data.
-                </p>
+            <div className="grid min-h-[300px] place-items-center px-6 py-10 text-center">
+              <div className="max-w-md">
+                <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-tide/[0.08] text-tide"><UserRound size={21} /></div>
+                <h3 className="display-font mt-4 text-xl font-semibold text-ink">Build your company directory</h3>
+                <p className="mt-2 text-sm leading-6 text-slate">Create a department, then add employees manually or import a validated CSV.</p>
+                <button type="button" onClick={() => setComposer("department")} className="app-primary-button mt-5"><Plus size={15} /> Create first department</button>
               </div>
             </div>
           )}
@@ -453,6 +500,18 @@ export function EmployeesConsole() {
         </Panel>
       ) : null}
     </>
+  );
+}
+
+function DirectoryStat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: number }) {
+  return (
+    <div className="app-surface flex items-center gap-3 rounded-xl px-4 py-3.5">
+      <div className="grid h-9 w-9 place-items-center rounded-lg bg-tide/[0.08] text-tide"><Icon size={16} /></div>
+      <div>
+        <div className="display-font text-lg font-semibold text-ink">{value}</div>
+        <div className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-slate">{label}</div>
+      </div>
+    </div>
   );
 }
 

@@ -2,27 +2,121 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   BreachSim design system
+   Palette derived from the product mark: deep navy shield, electric-blue
+   breach, cyan circuit traces.
+   ========================================================================== */
+
 :root {
-  --font-sans: "Segoe UI Variable Text", "Aptos", "Segoe UI", sans-serif;
-  --font-display: "Segoe UI Variable Display", "Aptos Display", "Segoe UI", sans-serif;
-  --font-mono: "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
-  --bg: #f4f7fb;
-  --bg-strong: #ffffff;
-  --surface: rgba(255, 255, 255, 0.94);
-  --surface-strong: rgba(255, 255, 255, 0.98);
-  --surface-dark: rgba(11, 17, 30, 0.9);
-  --ink: #0f172a;
-  --muted: #64748b;
-  --line: rgba(16, 22, 37, 0.09);
-  --line-strong: rgba(16, 22, 37, 0.18);
-  --ember: #dd6a3d;
-  --moss: #60793f;
-  --tide: #0f6c7d;
-  --warning: #c9981d;
-  --violet: #324e9e;
-  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-strong: 0 8px 24px rgba(15, 23, 42, 0.1);
+  /* Forensic-console type stack. Bricolage Grotesque has a variable optical size that
+     gives headlines genuine character; IBM Plex Sans reads as institutional/technical
+     rather than generic-SaaS; JetBrains Mono carries every number and identifier. */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", var(--font-sans);
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Mono", monospace;
+
+  /* Brand ramp — straight off the logo gradient */
+  --brand-50: 235 244 255;
+  --brand-100: 214 232 255;
+  --brand-200: 173 210 255;
+  --brand-300: 124 192 255;
+  --brand-400: 79 163 255;
+  --brand-500: 43 139 255;
+  --brand-600: 30 111 224;
+  --brand-700: 27 79 160;
+  --brand-800: 15 36 68;
+  --brand-900: 10 23 48;
+  --brand-950: 5 11 26;
+
+  /* Semantic accents */
+  --breach-rgb: 229 72 77;
+  --signal-rgb: 18 165 148;
+  --caution-rgb: 214 143 10;
+  --violet-rgb: 124 93 250;
+
+  /* Text */
+  --ink-rgb: 12 21 40;
+  --ink-muted-rgb: 92 108 133;
+  --ink-subtle-rgb: 132 147 170;
+
+  /* Legacy token aliases — kept so pre-existing markup keeps working while it
+     migrates onto the semantic classes above. */
+  --slate-rgb: var(--ink-muted-rgb);
+  --tide-rgb: var(--brand-500);
+  --ember-rgb: var(--breach-rgb);
+  --moss-rgb: var(--signal-rgb);
+  --mist-rgb: 238 242 248;
+  --sand-rgb: 245 248 252;
+
+  /* Surfaces */
+  --bg: #eef2f8;
+  --bg-tint: 43 139 255;
+  --surface: #ffffff;
+  --surface-muted: #f5f8fc;
+  --surface-sunken: #eaeff7;
+  --surface-inverse: #0a1730;
+
+  --line: #dde5ef;
+  --line-strong: #c6d3e3;
+  --line-inverse: rgba(255, 255, 255, 0.09);
+
+  /* Navigation rail */
+  --nav-bg: #0a1730;
+  --nav-fg: rgba(255, 255, 255, 0.62);
+  --nav-fg-strong: #ffffff;
+  --nav-line: rgba(255, 255, 255, 0.08);
+
+  --brand: rgb(var(--brand-500));
+  --brand-hover: rgb(var(--brand-600));
+  --brand-ring: rgb(var(--brand-500) / 0.16);
+
+  --radius-sm: 0.5rem;
+  --radius: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+
+  --shadow-xs: 0 1px 2px rgba(10, 23, 48, 0.06);
+  --shadow-sm: 0 2px 4px rgba(10, 23, 48, 0.04), 0 8px 20px rgba(10, 23, 48, 0.05);
+  --shadow-md: 0 4px 8px rgba(10, 23, 48, 0.05), 0 18px 44px rgba(10, 23, 48, 0.09);
+  --shadow-lg: 0 8px 16px rgba(10, 23, 48, 0.06), 0 32px 72px rgba(10, 23, 48, 0.14);
+  --shadow-brand: 0 6px 16px rgb(var(--brand-500) / 0.24);
 }
+
+html[data-theme="dark"] {
+  --ink-rgb: 231 239 250;
+  --ink-muted-rgb: 148 167 194;
+  --ink-subtle-rgb: 111 131 160;
+
+  --slate-rgb: var(--ink-muted-rgb);
+  --tide-rgb: var(--brand-400);
+  --mist-rgb: 6 13 28;
+  --sand-rgb: 16 31 58;
+
+  --bg: #060d1c;
+  --surface: #0c1930;
+  --surface-muted: #101f3a;
+  --surface-sunken: #081326;
+  --surface-inverse: #050b1a;
+
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.15);
+
+  --nav-bg: #050b1a;
+
+  --brand: rgb(var(--brand-400));
+  --brand-hover: rgb(var(--brand-300));
+  --brand-ring: rgb(var(--brand-400) / 0.2);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.24), 0 8px 20px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.26), 0 18px 44px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.3), 0 32px 72px rgba(0, 0, 0, 0.46);
+}
+
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
 
 * {
   box-sizing: border-box;
@@ -30,23 +124,18 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f5f7fa;
-  color: var(--ink);
-  font-family: var(--font-sans), "Aptos", "Segoe UI Variable", sans-serif;
+  background: var(--bg);
+  color: rgb(var(--ink-rgb));
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01" 1, "cv11" 1;
+  -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  transition:
-    background 220ms ease,
-    color 220ms ease;
-}
-
-html[data-theme="dark"] body {
-  background: #0f172a;
-  color: #f4efe7;
 }
 
 a {
@@ -54,113 +143,44 @@ a {
   text-decoration: none;
 }
 
-::selection {
-  background: rgba(15, 108, 125, 0.16);
-  color: var(--ink);
-}
-
-.dark-login {
-  color-scheme: dark;
-}
-
-.page-shell {
-  position: relative;
-}
-
-.page-shell::before {
-  display: none;
-}
-
-html[data-theme="dark"] .page-shell::before {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
-}
-
-.glass {
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  box-shadow: var(--shadow-soft);
-}
-
-.glass-dark {
-  background: #111827;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: var(--shadow-soft);
-}
-
-.section-title {
-  font-size: 0.72rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--muted);
-  font-family: var(--font-sans), sans-serif;
-  font-weight: 750;
-}
-
-.display-font {
-  font-family: var(--font-display), var(--font-sans), sans-serif;
-}
-
-.shell-ring {
-  position: relative;
-  overflow: hidden;
-}
-
-.shell-ring::after {
-  display: none;
-}
-
+button,
 input,
 select,
 textarea {
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.98);
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background-color 160ms ease,
-    transform 160ms ease;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  font: inherit;
+  color: inherit;
 }
 
-html[data-theme="dark"] input,
-html[data-theme="dark"] select,
-html[data-theme="dark"] textarea {
-  background: rgba(15, 23, 42, 0.92);
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  color: #f8fafc;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
-input::placeholder,
-textarea::placeholder {
-  color: rgba(102, 112, 133, 0.82);
+::selection {
+  background: rgb(var(--brand-500) / 0.2);
 }
 
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: rgba(15, 108, 125, 0.28) !important;
-  box-shadow:
-    0 0 0 4px rgba(15, 108, 125, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.75) !important;
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
 }
 
-button {
-  transition:
-    transform 150ms ease,
-    box-shadow 150ms ease,
-    opacity 150ms ease,
-    background-color 150ms ease;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-button:hover:not(:disabled) {
-  transform: none;
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--ink-subtle-rgb) / 0.32);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
 }
 
-button:active:not(:disabled) {
-  transform: translateY(0);
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--ink-subtle-rgb) / 0.5);
+  background-clip: padding-box;
+  border: 3px solid transparent;
 }
 
 table {
@@ -170,45 +190,802 @@ table {
 
 th,
 td {
-  vertical-align: top;
+  vertical-align: middle;
 }
 
-::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+/* --------------------------------------------------------------------------
+   Typography helpers
+   -------------------------------------------------------------------------- */
+
+.display-font {
+  font-family: var(--font-display);
+  /* Bricolage's variable optical size: tighten and slightly condense at display sizes. */
+  font-variation-settings: "opsz" 32, "wdth" 100;
+  letter-spacing: -0.022em;
 }
 
-::-webkit-scrollbar-track {
-  background: rgba(16, 22, 37, 0.04);
+/* Eyebrows and section labels run in mono — the console register that ties the whole
+   interface to the forensic/technical identity rather than generic uppercase sans. */
+.eyebrow {
+  font-family: var(--font-mono);
+  color: rgb(var(--ink-subtle-rgb));
+  font-size: 0.645rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
 }
 
-::-webkit-scrollbar-thumb {
+.section-title {
+  font-family: var(--font-mono);
+  color: rgb(var(--ink-muted-rgb));
+  font-size: 0.665rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Every figure in the product is monospaced and tabular, so columns of scores, rates and
+   timings align and read as instrument output. */
+.numeric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
+
+/* --------------------------------------------------------------------------
+   Layout
+   -------------------------------------------------------------------------- */
+
+.page-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 480px at 82% -8%, rgb(var(--brand-500) / 0.07), transparent 70%),
+    radial-gradient(760px 380px at 6% 4%, rgb(var(--brand-400) / 0.05), transparent 70%),
+    var(--bg);
+}
+
+.app-nav {
+  background:
+    radial-gradient(520px 220px at 12% 0%, rgb(var(--brand-500) / 0.16), transparent 72%),
+    linear-gradient(184deg, #0d1e3c 0%, var(--nav-bg) 46%, #050b1a 100%);
+  border-right: 1px solid var(--nav-line);
+}
+
+.app-topbar {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(20px) saturate(1.4);
+}
+
+/* --------------------------------------------------------------------------
+   Surfaces
+   -------------------------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.card-flush {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.card-muted {
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.card-sunken {
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* Legacy aliases kept so older markup keeps its surface treatment. */
+.enterprise-card,
+.glass,
+.app-surface {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.enterprise-muted-card,
+.app-surface-muted {
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.glass-dark {
+  background: var(--surface-inverse);
+  border: 1px solid var(--line-inverse);
+  border-radius: var(--radius-lg);
+}
+
+.card-interactive {
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.card-interactive:hover {
+  border-color: rgb(var(--brand-500) / 0.4);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* Accent rail on the left edge of a panel — used for channel colour-coding. */
+.rail-brand { box-shadow: inset 3px 0 0 rgb(var(--brand-500)); }
+.rail-breach { box-shadow: inset 3px 0 0 rgb(var(--breach-rgb)); }
+.rail-signal { box-shadow: inset 3px 0 0 rgb(var(--signal-rgb)); }
+.rail-caution { box-shadow: inset 3px 0 0 rgb(var(--caution-rgb)); }
+.rail-violet { box-shadow: inset 3px 0 0 rgb(var(--violet-rgb)); }
+
+/* --------------------------------------------------------------------------
+   Buttons
+   -------------------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 0.6rem 0.95rem;
+  font-size: 0.825rem;
+  font-weight: 650;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease,
+    box-shadow 140ms ease, transform 100ms ease, opacity 140ms ease;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.btn-primary,
+.app-primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 0.6rem 0.95rem;
+  font-size: 0.825rem;
+  font-weight: 650;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: var(--shadow-brand);
+  transition: background-color 140ms ease, box-shadow 140ms ease, transform 100ms ease;
+}
+
+.btn-primary:hover:not(:disabled),
+.app-primary-button:hover:not(:disabled) {
+  background: var(--brand-hover);
+}
+
+.btn-primary:active:not(:disabled),
+.app-primary-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-primary:disabled,
+.app-primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+.btn-secondary,
+.app-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.95rem;
+  font-size: 0.825rem;
+  font-weight: 650;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--surface);
+  color: rgb(var(--ink-rgb));
+  box-shadow: var(--shadow-xs);
+  transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease;
+}
+
+.btn-secondary:hover:not(:disabled),
+.app-secondary-button:hover:not(:disabled) {
+  background: var(--surface-muted);
+  border-color: rgb(var(--brand-500) / 0.42);
+}
+
+.btn-secondary:active:not(:disabled),
+.app-secondary-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-secondary:disabled,
+.app-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 0.55rem 0.8rem;
+  font-size: 0.825rem;
+  font-weight: 650;
+  cursor: pointer;
+  background: transparent;
+  color: rgb(var(--ink-muted-rgb));
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: rgb(var(--ink-rgb));
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid rgb(var(--breach-rgb) / 0.3);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.95rem;
+  font-size: 0.825rem;
+  font-weight: 650;
+  cursor: pointer;
+  background: rgb(var(--breach-rgb) / 0.1);
+  color: rgb(var(--breach-rgb));
+  transition: background-color 140ms ease;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgb(var(--breach-rgb) / 0.18);
+}
+
+.btn-danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.btn-sm {
+  padding: 0.42rem 0.7rem;
+  font-size: 0.765rem;
+  border-radius: var(--radius-sm);
+}
+
+.btn-lg {
+  padding: 0.8rem 1.35rem;
+  font-size: 0.9rem;
+}
+
+.app-icon-button {
+  display: inline-grid;
+  height: 2.3rem;
+  width: 2.3rem;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: rgb(var(--ink-muted-rgb));
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.app-icon-button:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: rgb(var(--ink-rgb));
+  border-color: var(--line-strong);
+}
+
+/* Semantic button classes set `display`, which would otherwise defeat Tailwind's
+   responsive visibility utilities. These restore the intended behaviour. */
+.hidden.btn-primary,
+.hidden.btn-secondary,
+.hidden.app-primary-button,
+.hidden.app-secondary-button,
+.hidden.app-icon-button {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .sm\:grid.app-icon-button { display: grid; }
+  .sm\:inline-flex.btn-primary,
+  .sm\:inline-flex.btn-secondary,
+  .sm\:inline-flex.app-primary-button,
+  .sm\:inline-flex.app-secondary-button { display: inline-flex; }
+}
+
+@media (min-width: 768px) {
+  .md\:grid.app-icon-button { display: grid; }
+  .md\:inline-flex.btn-primary,
+  .md\:inline-flex.btn-secondary,
+  .md\:inline-flex.app-primary-button,
+  .md\:inline-flex.app-secondary-button { display: inline-flex; }
+}
+
+@media (min-width: 1024px) {
+  .lg\:inline-flex.btn-primary,
+  .lg\:inline-flex.btn-secondary,
+  .lg\:inline-flex.app-primary-button,
+  .lg\:inline-flex.app-secondary-button { display: inline-flex; }
+}
+
+/* --------------------------------------------------------------------------
+   Form controls
+   -------------------------------------------------------------------------- */
+
+.field {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.58rem 0.75rem;
+  font-size: 0.85rem;
+  color: rgb(var(--ink-rgb));
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.field::placeholder {
+  color: rgb(var(--ink-subtle-rgb) / 0.9);
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.field:disabled {
+  background: var(--surface-sunken);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.735rem;
+  font-weight: 650;
+  color: rgb(var(--ink-muted-rgb));
+  letter-spacing: 0.01em;
+}
+
+.field-hint {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: rgb(var(--ink-subtle-rgb));
+  line-height: 1.45;
+}
+
+/* Global fallback for inputs that have not been migrated to .field yet. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select,
+textarea {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: rgb(var(--ink-rgb));
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--brand) !important;
+  box-shadow: 0 0 0 3px var(--brand-ring) !important;
+  outline: none;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+   Badges & pills
+   -------------------------------------------------------------------------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   border-radius: 999px;
-  background: rgba(16, 22, 37, 0.16);
-  border: 3px solid transparent;
-  background-clip: padding-box;
+  border: 1px solid transparent;
+  padding: 0.16rem 0.55rem;
+  font-size: 0.685rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(16, 22, 37, 0.24);
-  border: 3px solid transparent;
-  background-clip: padding-box;
+.badge-neutral {
+  background: rgb(var(--ink-subtle-rgb) / 0.12);
+  border-color: rgb(var(--ink-subtle-rgb) / 0.22);
+  color: rgb(var(--ink-muted-rgb));
 }
 
-.enterprise-card {
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  box-shadow: var(--shadow-soft);
+.badge-brand {
+  background: rgb(var(--brand-500) / 0.12);
+  border-color: rgb(var(--brand-500) / 0.28);
+  color: rgb(var(--brand-600));
 }
 
-.enterprise-muted-card {
-  background: #f8fafc;
-  border: 1px solid rgba(15, 23, 42, 0.1);
+html[data-theme="dark"] .badge-brand { color: rgb(var(--brand-300)); }
+
+.badge-success {
+  background: rgb(var(--signal-rgb) / 0.13);
+  border-color: rgb(var(--signal-rgb) / 0.3);
+  color: rgb(var(--signal-rgb));
 }
 
-html[data-theme="dark"] .enterprise-card,
-html[data-theme="dark"] .enterprise-muted-card {
-  background: rgba(15, 23, 42, 0.9);
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.22);
+.badge-warn {
+  background: rgb(var(--caution-rgb) / 0.14);
+  border-color: rgb(var(--caution-rgb) / 0.3);
+  color: rgb(var(--caution-rgb));
+}
+
+.badge-danger {
+  background: rgb(var(--breach-rgb) / 0.12);
+  border-color: rgb(var(--breach-rgb) / 0.3);
+  color: rgb(var(--breach-rgb));
+}
+
+.badge-violet {
+  background: rgb(var(--violet-rgb) / 0.13);
+  border-color: rgb(var(--violet-rgb) / 0.3);
+  color: rgb(var(--violet-rgb));
+}
+
+/* --------------------------------------------------------------------------
+   Tables
+   -------------------------------------------------------------------------- */
+
+.data-table {
+  width: 100%;
+  font-size: 0.83rem;
+}
+
+.data-table thead {
+  background: var(--surface-muted);
+}
+
+.data-table th {
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+  color: rgb(var(--ink-muted-rgb));
+  font-size: 0.685rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 0.7rem 0.85rem;
+}
+
+.data-table tbody tr {
+  border-top: 1px solid var(--line);
+  transition: background-color 120ms ease;
+}
+
+.data-table tbody tr:hover {
+  background: rgb(var(--brand-500) / 0.035);
+}
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* --------------------------------------------------------------------------
+   Meters & progress
+   -------------------------------------------------------------------------- */
+
+.meter {
+  height: 0.4rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(var(--ink-subtle-rgb) / 0.16);
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 420ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* --------------------------------------------------------------------------
+   Simulation surfaces (voice call + synthetic media)
+   -------------------------------------------------------------------------- */
+
+.sim-stage {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 460px at 50% -10%, rgb(var(--brand-500) / 0.18), transparent 68%),
+    linear-gradient(180deg, #0b1830 0%, #060d1c 58%, #040914 100%);
+  color: #e8eefb;
+}
+
+.sim-panel {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(14px);
+}
+
+.sim-choice {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.045);
+  padding: 0.85rem 1rem;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 550;
+  color: #e8eefb;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 120ms ease;
+}
+
+.sim-choice:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgb(var(--brand-400) / 0.6);
+  transform: translateX(2px);
+}
+
+.sim-choice:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Dark-stage button. The simulators sit on their own dark surface, so they must not
+   borrow the light-theme .btn-* classes — those set a light background and would render
+   white-on-white here. */
+.sim-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.55rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: #e8eefb;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.sim-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgb(var(--brand-400) / 0.55);
+}
+
+.sim-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Ring pulse behind an incoming-call avatar. */
+@keyframes sim-ring {
+  0% { box-shadow: 0 0 0 0 rgb(var(--brand-400) / 0.42); }
+  70% { box-shadow: 0 0 0 22px rgb(var(--brand-400) / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--brand-400) / 0); }
+}
+
+.sim-ringing {
+  animation: sim-ring 1.8s cubic-bezier(0.66, 0, 0, 1) infinite;
+}
+
+/* Audio level bars while the persona is "speaking". */
+@keyframes sim-wave {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+.sim-wave-bar {
+  transform-origin: center;
+  animation: sim-wave 900ms ease-in-out infinite;
+}
+
+/* Scanline shimmer over the simulated video frame. */
+@keyframes sim-scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(320%); }
+}
+
+.sim-scanline {
+  animation: sim-scan 3.4s linear infinite;
+}
+
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-rise {
+  animation: fade-rise 320ms cubic-bezier(0.2, 0, 0.1, 1) both;
+}
+
+/* --------------------------------------------------------------------------
+   Page-load choreography
+   One orchestrated reveal beats scattered micro-interactions. Mark a container
+   `.stagger` and its direct children cascade in; `.reveal` handles single elements.
+   -------------------------------------------------------------------------- */
+
+@keyframes reveal-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* `backwards` (not `both`) is deliberate: it applies the from-state only during the
+   delay, then hands back to the element's natural style. With `both`, an element that
+   never gets to run its animation — hidden at a breakpoint, or in a browser that skips
+   it — would stay stuck at opacity 0. Content must never depend on animation to appear. */
+.reveal {
+  animation: reveal-up 620ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.stagger > * {
+  animation: reveal-up 620ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.stagger > *:nth-child(1) { animation-delay: 60ms; }
+.stagger > *:nth-child(2) { animation-delay: 130ms; }
+.stagger > *:nth-child(3) { animation-delay: 200ms; }
+.stagger > *:nth-child(4) { animation-delay: 270ms; }
+.stagger > *:nth-child(5) { animation-delay: 340ms; }
+.stagger > *:nth-child(6) { animation-delay: 410ms; }
+.stagger > *:nth-child(7) { animation-delay: 480ms; }
+.stagger > *:nth-child(8) { animation-delay: 550ms; }
+
+/* Scanning sweep used on the login mark — a slow forensic "read" of the shield. */
+@keyframes scan-sweep {
+  0% { transform: translateY(-120%); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateY(320%); opacity: 0; }
+}
+
+.scan-sweep {
+  animation: scan-sweep 4.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* --------------------------------------------------------------------------
+   Utilities
+   -------------------------------------------------------------------------- */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--ink-subtle-rgb) / 0.09) 25%,
+    rgb(var(--ink-subtle-rgb) / 0.16) 37%,
+    rgb(var(--ink-subtle-rgb) / 0.09) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-sweep 1.4s ease infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes skeleton-sweep {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+.dark-login {
+  color-scheme: dark;
+}
+
+/* Slow drifting glow behind the login card. */
+@keyframes login-orb-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.9; }
+  50% { transform: translate3d(3%, 4%, 0) scale(1.08); opacity: 1; }
+}
+
+.login-orb {
+  animation: login-orb-drift 14s ease-in-out infinite;
+}
+
+/* The global `input` reset sets a light surface background (higher specificity than a
+   Tailwind utility), so the dark-login fields need an explicit override to stay on-glass. */
+.login-input {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.login-input::placeholder {
+  color: rgba(255, 255, 255, 0.28) !important;
+}
+
+.login-input:focus {
+  border-color: rgb(var(--brand-400) / 0.7) !important;
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 0 0 3px rgb(var(--brand-400) / 0.16) !important;
+}
+
+/* Autofilled inputs on the dark login should not flash white. */
+.login-input:-webkit-autofill,
+.login-input:-webkit-autofill:hover,
+.login-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #fff;
+  caret-color: #fff;
+  transition: background-color 9999s ease-in-out 0s;
+  box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.05) inset !important;
+}
+
+.scroll-fade-x {
+  mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+}
+
+/* Dark-mode compatibility for markup that still hard-codes light surfaces.
+   Scoped to .page-shell so the simulation stages and login screen keep their
+   own deliberately dark treatment. */
+html[data-theme="dark"] .page-shell [class*="bg-white"] {
+  background-color: var(--surface) !important;
+}
+
+html[data-theme="dark"] .page-shell [class*="bg-sand"] {
+  background-color: var(--surface-muted) !important;
+}
+
+html[data-theme="dark"] .page-shell [class*="border-ink"] {
+  border-color: var(--line) !important;
+}
+
+/* Set by the screenshot tool so captures show the settled end state. */
+.capture-static *,
+.capture-static *::before,
+.capture-static *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.001ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
