@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./breachsim.db"
     redis_url: str = "redis://redis:6379/0"
     encryption_key: str = "3zcD2n9il4f-aM1MAt7R9Hkg4g7H4FrJDE0ctCcf18Y="
-    frontend_base_url: str = "http://127.0.0.1:3001"
+    frontend_base_url: str = "http://localhost:3000"
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:3000",
@@ -40,10 +40,50 @@ class Settings(BaseSettings):
     training_domain_placeholder: str = "training.breachsim.local"
     report_export_dir: str = "sample_outputs"
 
+    # --- Synthetic media (real voice/video cloning) ---
+    # Providers are pluggable. With none configured, the simulators fall back to the
+    # in-browser speech engine, so the platform still runs with zero paid services.
+    media_storage_dir: str = "media_store"
+    #: Default retention for a generated clip; a persona's consent expiry always wins if sooner.
+    media_retention_days: int = 30
+    #: Hard ceiling on an uploaded consent sample, in megabytes.
+    media_max_upload_mb: int = 25
+
+    voice_clone_provider: str = "none"  # none | elevenlabs
+    elevenlabs_api_key: str | None = None
+    elevenlabs_base_url: str = "https://api.elevenlabs.io"
+    elevenlabs_model_id: str = "eleven_multilingual_v2"
+    #: Voice cloning that mimics an identifiable person is gated behind this flag in
+    #: addition to per-persona consent. Instant Voice Cloning requires a paid plan.
+    elevenlabs_allow_voice_cloning: bool = True
+
+    video_clone_provider: str = "none"  # none | did
+    did_api_key: str | None = None
+    did_base_url: str = "https://api.d-id.com"
+
+
+#: Shipped placeholder. Signing tokens with a publicly-known secret means anyone can
+#: forge an admin token, which defeats every RBAC check in the product.
+INSECURE_SECRET_PLACEHOLDER = "change-me-in-production"
+
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    resolved = Settings()
+    if resolved.environment.lower() in {"production", "prod"} and (
+        resolved.secret_key == INSECURE_SECRET_PLACEHOLDER or len(resolved.secret_key) < 32
+    ):
+        raise RuntimeError(
+            "SECRET_KEY is unset, still the shipped placeholder, or shorter than 32 characters. "
+            "Set a strong unique SECRET_KEY before running in production — tokens signed with "
+            "the default secret can be forged by anyone."
+        )
+    return resolved
 
 
 settings = get_settings()
+
+
+def secret_key_is_insecure() -> bool:
+    """True when the JWT secret would not be safe outside local development."""
+    return settings.secret_key == INSECURE_SECRET_PLACEHOLDER or len(settings.secret_key) < 32

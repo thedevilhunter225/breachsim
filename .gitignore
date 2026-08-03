@@ -53,3 +53,7 @@ _reference_gophish/
 Thumbs.db
 .idea/
 .vscode/
+
+# Generated synthetic media (never commit cloned voices/faces)
+media_store/
+backend/media_store/

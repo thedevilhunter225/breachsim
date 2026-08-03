@@ -26,6 +26,10 @@ services:
       SECRET_KEY: ${BACKEND_SECRET_KEY:-change-me-in-production}
       ENCRYPTION_KEY: ${BACKEND_ENCRYPTION_KEY:-3zcD2n9il4f-aM1MAt7R9Hkg4g7H4FrJDE0ctCcf18Y=}
       FRONTEND_BASE_URL: ${BACKEND_FRONTEND_BASE_URL:-http://localhost:3000}
+      VOICE_CLONE_PROVIDER: ${VOICE_CLONE_PROVIDER:-none}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      VIDEO_CLONE_PROVIDER: ${VIDEO_CLONE_PROVIDER:-none}
+      DID_API_KEY: ${DID_API_KEY:-}
     depends_on:
       - postgres
       - redis
@@ -45,6 +49,10 @@ services:
       SECRET_KEY: ${BACKEND_SECRET_KEY:-change-me-in-production}
       ENCRYPTION_KEY: ${BACKEND_ENCRYPTION_KEY:-3zcD2n9il4f-aM1MAt7R9Hkg4g7H4FrJDE0ctCcf18Y=}
       FRONTEND_BASE_URL: ${BACKEND_FRONTEND_BASE_URL:-http://localhost:3000}
+      VOICE_CLONE_PROVIDER: ${VOICE_CLONE_PROVIDER:-none}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      VIDEO_CLONE_PROVIDER: ${VIDEO_CLONE_PROVIDER:-none}
+      DID_API_KEY: ${DID_API_KEY:-}
     depends_on:
       - backend
       - redis
@@ -58,6 +66,7 @@ services:
       context: ./frontend
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+      NEXT_PUBLIC_DEMO_MODE: ${NEXT_PUBLIC_DEMO_MODE:-false}
     depends_on:
       - backend
     ports:
