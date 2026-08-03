@@ -21,6 +21,7 @@ from app.schemas.employees import (
     EmployeeUpdate,
 )
 from app.services.audit import access_log, audit_log
+from app.services.deletion import delete_employee
 from app.services.profiling import build_context_profile, ensure_context_profile
 
 router = APIRouter()
@@ -51,7 +52,9 @@ def serialize_employee(employee: Employee) -> EmployeeRead:
 def list_employees(
     db: Annotated[Session, Depends(get_db)],
     user=Depends(get_current_user),
-    department_id: str | None = Query(default=None),
+    # Typed as UUID so a malformed value is a 422 from FastAPI rather than a 500 when
+    # SQLAlchemy tries to bind a plain string against the UUID column.
+    department_id: uuid.UUID | None = Query(default=None),
     risk_band: str | None = Query(default=None),
 ) -> list[EmployeeRead]:
     query = (
@@ -251,10 +254,21 @@ def update_employee(
     for key, value in payload.model_dump(exclude_none=True).items():
         setattr(employee, key, value)
     build_context_profile(db, employee)
-    audit_log(db, organization_id=user.organization_id, user_id=user.id, action="employee.update", resource_type="employee", resource_id=str(employee.id), details=payload.model_dump(exclude_none=True))
+    audit_log(db, organization_id=user.organization_id, user_id=user.id, action="employee.update", resource_type="employee", resource_id=str(employee.id), details=payload.model_dump(exclude_none=True, mode="json"))
     db.commit()
     db.refresh(employee)
     return serialize_employee(employee)
+
+
+@router.delete("/employees/{employee_id}")
+def delete(
+    employee_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(require_roles(UserRole.ADMIN)),
+):
+    """Right-to-erasure delete: removes the employee and everything attributable to them."""
+    result = delete_employee(db, organization_id=user.organization_id, employee_id=employee_id, actor=user)
+    return result.as_dict()
 
 
 @router.post("/employees/{employee_id}/consent", response_model=EmployeeRead)
@@ -274,7 +288,7 @@ def update_consent(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
     employee.consent_status = payload.status
     db.add(ConsentRecord(employee_id=employee.id, status=payload.status, source=payload.source, note=payload.note))
-    audit_log(db, organization_id=user.organization_id, user_id=user.id, action="employee.consent", resource_type="employee", resource_id=str(employee.id), details=payload.model_dump())
+    audit_log(db, organization_id=user.organization_id, user_id=user.id, action="employee.consent", resource_type="employee", resource_id=str(employee.id), details=payload.model_dump(mode="json"))
     db.commit()
     return serialize_employee(employee)
 

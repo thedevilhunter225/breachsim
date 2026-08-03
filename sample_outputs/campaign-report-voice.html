@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BreachSim campaign report — Demo · vishing · password reset</title>
+<style>
+  :root { --navy:#0a1730; --brand:#2b8bff; --line:#dde5ef; --muted:#5c6c85; --breach:#e5484d; --signal:#12a594; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:40px 24px; background:#eef2f8; color:#0c1528;
+         font:15px/1.6 -apple-system,Segoe UI,Roboto,sans-serif; }
+  .sheet { max-width:1000px; margin:0 auto; background:#fff; border:1px solid var(--line);
+            border-radius:14px; overflow:hidden; box-shadow:0 18px 44px rgba(10,23,48,.09); }
+  header { background:linear-gradient(135deg,var(--navy),#12305e 60%,var(--brand)); color:#fff; padding:32px; }
+  header .eyebrow { font-size:11px; letter-spacing:.18em; text-transform:uppercase; opacity:.7; }
+  header h1 { margin:8px 0 4px; font-size:27px; letter-spacing:-.02em; }
+  header p { margin:0; opacity:.78; font-size:14px; }
+  section { padding:26px 32px; border-top:1px solid var(--line); }
+  h2 { margin:0 0 14px; font-size:16px; letter-spacing:.01em; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
+  .kpi { background:#f5f8fc; border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .kpi .label { font-size:10.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+  .kpi .value { font-size:24px; font-weight:700; margin-top:4px; letter-spacing:-.02em; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th,td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  thead th { background:#f5f8fc; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+  table.kv th { width:220px; color:var(--muted); font-weight:600; background:transparent; text-transform:none;
+                 font-size:13.5px; letter-spacing:0; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .muted { color:var(--muted); }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:700; }
+  .pill-compromised { background:rgba(229,72,77,.12); color:var(--breach); }
+  .pill-recovered { background:rgba(43,139,255,.12); color:#1e6fe0; }
+  .pill-resilient { background:rgba(18,165,148,.13); color:var(--signal); }
+  .pill-no-interaction { background:#eef2f8; color:var(--muted); }
+  .note { background:#f5f8fc; border-left:3px solid var(--brand); padding:12px 14px; border-radius:0 8px 8px 0;
+           font-size:13px; color:var(--muted); }
+  footer { padding:20px 32px; background:#f5f8fc; color:var(--muted); font-size:12px; }
+  @media print { body { background:#fff; padding:0; } .sheet { box-shadow:none; border:0; } }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <div class="eyebrow">BreachSim · Campaign evidence report</div>
+    <h1>Demo · vishing · password reset</h1>
+    <p>Voice / vishing · Northwind Financial Labs · generated 2026-07-26 20:46 UTC</p>
+  </header>
+
+  <section>
+    <h2>Outcome at a glance</h2>
+    <p class="muted" style="margin-top:-6px">Rates are share of engaged targets, not share of events — one interactive simulation produces several decisions per person.</p>
+    <div class="kpis">
+      <div class="kpi"><div class="label">Targets</div><div class="value">1</div></div>
+      <div class="kpi"><div class="label">Delivered</div><div class="value">1</div></div>
+      <div class="kpi"><div class="label">Compromised</div><div class="value">0</div></div>
+      <div class="kpi"><div class="label">Failure rate</div><div class="value">0.0%</div></div>
+      <div class="kpi"><div class="label">Resilience rate</div><div class="value">100.0%</div></div>
+      <div class="kpi"><div class="label">Training assigned</div><div class="value">0</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Authorization chain</h2>
+    <table class="kv">
+      <tr><th>Created by</th><td>Bilal Siddiqui</td></tr><tr><th>First approval</th><td>Aisha Rahman</td></tr><tr><th>Second approval</th><td>Not required</td></tr>
+      <tr><th>Two-person rule</th><td>Waived for this campaign</td></tr>
+      <tr><th>Learning objective</th><td>Recognize social engineering patterns.</td></tr>
+      <tr><th>Scenario</th><td>Inbound call: Password Reset</td></tr>
+      <tr><th>Theme / difficulty</th><td>password reset · high</td></tr>
+    </table>
+  </section>
+
+  
+        <section>
+          <h2>Impersonation authorization</h2>
+          <table class="kv">
+            <tr><th>Persona</th><td>IT Service Desk Lead (PSN-SERV-DESK)</td></tr>
+            <tr><th>Role presented</th><td>Service Desk Lead</td></tr>
+            <tr><th>Represents a real person</th><td>No — synthetic composite role</td></tr>
+            <tr><th>Consent reference</th><td>Not applicable</td></tr>
+            <tr><th>Consent window</th><td>2026-07-26 20:30 UTC to -</td></tr>
+            <tr><th>Approved by</th><td>Rayan Khan</td></tr>
+          </table>
+        </section>
+        
+
+  <section>
+    <h2>Per-employee outcome</h2>
+    <table>
+      <thead><tr><th>Employee</th><th>Outcome</th><th class="num">Risky</th><th class="num">Protective</th><th class="num">Training</th><th class="num">Risk</th><th>Broke at</th></tr></thead>
+      <tbody>
+        <tr class="outcome-resilient">
+          <td><strong>Demo Victim</strong><br><span class="muted">thedevilhunter325@gmail.com</span></td>
+          <td><span class="pill pill-resilient">Resilient</span></td>
+          <td class="num">0</td>
+          <td class="num">3</td>
+          <td class="num">0</td>
+          <td class="num">75</td>
+          <td>-</td>
+        </tr>
+        </tbody>
+    </table>
+  </section>
+
+  
+        <section>
+          <h2>Interaction decision trail</h2>
+          <p class="muted">Each decision the target made inside the Voice / vishing simulation, in order.</p>
+          <table>
+            <thead><tr><th>Employee</th><th>Step</th><th>Prompt</th><th>Response</th><th>Outcome</th><th>Weight</th><th>Time</th></tr></thead>
+            <tbody>
+        <tr>
+          <td>Demo Victim</td>
+          <td class="num">1</td>
+          <td>opening</td>
+          <td>Ask for their extension and say you&#x27;ll call back through the directory</td>
+          <td>Safe</td>
+          <td class="num">-8</td>
+          <td class="num">18.5s</td>
+        </tr>
+        
+        <tr>
+          <td>Demo Victim</td>
+          <td class="num">2</td>
+          <td>pretext</td>
+          <td>Decline to discuss workflow details on an unverified call</td>
+          <td>Safe</td>
+          <td class="num">-10</td>
+          <td class="num">16.6s</td>
+        </tr>
+        
+        <tr>
+          <td>Demo Victim</td>
+          <td class="num">3</td>
+          <td>ask</td>
+          <td>End the call and report it to the security team</td>
+          <td>Safe</td>
+          <td class="num">-16</td>
+          <td class="num">7.8s</td>
+        </tr>
+        </tbody>
+          </table>
+        </section>
+        
+
+  <section>
+    <h2>Event breakdown</h2>
+    <table>
+      <thead><tr><th>Event</th><th class="num">Count</th></tr></thead>
+      <tbody><tr><td>Verified Caller</td><td class='num'>2</td></tr><tr><td>Delivered</td><td class='num'>1</td></tr><tr><td>Clicked Report</td><td class='num'>1</td></tr></tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="note">
+      This simulation was run under the organization's approved guardrails. No real credentials were
+      captured, no real calls were placed, and no synthetic media was generated, stored or published.
+      Analytics are keyed to pseudonymous event identifiers.
+    </div>
+  </section>
+
+  <footer>Generated by BreachSim · Human Risk Intelligence · report id f50fc4ad-6b40-404b-b5aa-7c2985ec9c7a</footer>
+</div>
+</body>
+</html>

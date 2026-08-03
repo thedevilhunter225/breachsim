@@ -31,7 +31,7 @@ def update_policy(
     for key, value in payload.model_dump().items():
         setattr(policy, key, value)
     db.add(PolicyVersion(policy_id=policy.id, changed_by_user_id=user.id, snapshot=snapshot_policy(policy)))
-    audit_log(db, organization_id=user.organization_id, user_id=user.id, action="policy.update", resource_type="policy", resource_id=str(policy.id), details=payload.model_dump())
+    audit_log(db, organization_id=user.organization_id, user_id=user.id, action="policy.update", resource_type="policy", resource_id=str(policy.id), details=payload.model_dump(mode="json"))
     db.commit()
     db.refresh(policy)
     return policy

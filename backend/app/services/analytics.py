@@ -7,7 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.entities import Campaign, Department, DeliveryAttempt, Employee, EventLog, RiskScore, Scenario, TrainingCompletion
-from app.models.enums import Channel, EventType
+from app.models.enums import PROTECTIVE_EVENT_TYPES, RISKY_EVENT_TYPES, Channel, EventType
 from app.schemas.analytics import (
     AdaptiveRecommendation,
     BehaviorSignal,
@@ -48,14 +48,52 @@ def build_dashboard(db: Session, organization_id) -> DashboardResponse:
     for row in db.query(EventLog.channel, EventLog.event_type, func.count(EventLog.id)).filter(EventLog.organization_id == organization_id).group_by(EventLog.channel, EventLog.event_type):
         channel_counter[(row[0].value if row[0] else "unknown", row[1].value)] = row[2]
 
+    # Each channel fails and succeeds in its own vocabulary: a click on email, a scan on
+    # QR, a disclosure on a call, trusting a fake on deepfake. Roll them up so the chart
+    # compares like with like across all five.
+    #
+    # Rates are computed over distinct *people*, not events. An interactive voice or
+    # deepfake simulation records several decisions per target, so an event-over-delivery
+    # ratio would exceed 100% and make the channels incomparable.
+    risky_people: dict[str, set] = defaultdict(set)
+    protective_people: dict[str, set] = defaultdict(set)
+    reached_people: dict[str, set] = defaultdict(set)
+    for event in db.query(EventLog).filter(EventLog.organization_id == organization_id).all():
+        if not event.employee_id:
+            continue
+        channel_key = event.channel.value if event.channel else "unknown"
+        if event.event_type == EventType.DELIVERED:
+            reached_people[channel_key].add(event.employee_id)
+        elif event.event_type in RISKY_EVENT_TYPES:
+            risky_people[channel_key].add(event.employee_id)
+        elif event.event_type in PROTECTIVE_EVENT_TYPES and event.event_type != EventType.TRAINING_COMPLETED:
+            protective_people[channel_key].add(event.employee_id)
+
     channel_performance = []
-    for channel in ["email", "qr", "sms", "vishing"]:
+    for channel in [channel_enum.value for channel_enum in Channel]:
+        delivered_count = channel_counter.get((channel, "delivered"), 0)
+        risky = sum(
+            channel_counter.get((channel, event_type.value), 0) for event_type in RISKY_EVENT_TYPES
+        )
+        protective = sum(
+            channel_counter.get((channel, event_type.value), 0)
+            for event_type in PROTECTIVE_EVENT_TYPES
+            if event_type != EventType.TRAINING_COMPLETED
+        )
+        reached = len(reached_people.get(channel, set())) or delivered_count
+        failed_people = risky_people.get(channel, set())
+        # Someone who both complied and resisted counts as a failure, not resilience.
+        resisted_people = protective_people.get(channel, set()) - failed_people
         channel_performance.append(
             {
                 "channel": channel,
-                "delivered": channel_counter.get((channel, "delivered"), 0),
-                "clicks": channel_counter.get((channel, "clicked_link"), 0),
-                "reports": channel_counter.get((channel, "clicked_report"), 0),
+                "delivered": delivered_count,
+                "clicks": risky,
+                "risky_actions": risky,
+                "reports": protective,
+                "protective_actions": protective,
+                "failure_rate": round(len(failed_people) / reached * 100, 1) if reached else 0.0,
+                "resilience_rate": round(len(resisted_people) / reached * 100, 1) if reached else 0.0,
             }
         )
 
@@ -157,9 +195,9 @@ def build_risk_intelligence(db: Session, organization_id) -> RiskIntelligenceRes
         opened = sum(1 for event in department_events if event.event_type == EventType.OPENED_EMAIL)
         clicked = sum(1 for event in department_events if event.event_type == EventType.CLICKED_LINK)
         submitted = sum(1 for event in department_events if event.event_type == EventType.SUBMITTED_FORM_BOOLEAN)
-        reported = sum(1 for event in department_events if event.event_type == EventType.CLICKED_REPORT)
+        reported = sum(1 for event in department_events if event.event_type in PROTECTIVE_EVENT_TYPES and event.event_type != EventType.TRAINING_COMPLETED)
         scanned = sum(1 for event in department_events if event.event_type == EventType.SCANNED_QR)
-        risky_interactions = clicked + submitted + scanned
+        risky_interactions = sum(1 for event in department_events if event.event_type in RISKY_EVENT_TYPES)
 
         event_counter = Counter(
             event.event_type.value
@@ -236,12 +274,8 @@ def build_risk_intelligence(db: Session, organization_id) -> RiskIntelligenceRes
 
 
 def build_adaptive_recommendations(db: Session, organization_id, employees: list[Employee], events: list[EventLog]) -> list[AdaptiveRecommendation]:
-    risky_events = {
-        EventType.CLICKED_LINK,
-        EventType.SCANNED_QR,
-        EventType.SUBMITTED_FORM_BOOLEAN,
-    }
-    positive_events = {EventType.CLICKED_REPORT, EventType.TRAINING_COMPLETED}
+    risky_events = RISKY_EVENT_TYPES
+    positive_events = PROTECTIVE_EVENT_TYPES
 
     delivery_ids = [event.delivery_attempt_id for event in events if event.delivery_attempt_id]
     attempts = (
@@ -337,9 +371,11 @@ def build_adaptive_recommendations(db: Session, organization_id, employees: list
 
 
 def _channel_signal_weight(event_type: EventType) -> int:
+    if event_type in {EventType.TRUSTED_SYNTHETIC_MEDIA, EventType.DISCLOSED_ON_CALL}:
+        return 5
     if event_type == EventType.SUBMITTED_FORM_BOOLEAN:
         return 4
-    if event_type in {EventType.CLICKED_LINK, EventType.SCANNED_QR}:
+    if event_type in {EventType.CLICKED_LINK, EventType.SCANNED_QR, EventType.REPLIED_SMS}:
         return 3
     return 1
 
@@ -349,9 +385,18 @@ def _event_label(event_type: EventType) -> str:
         EventType.CLICKED_LINK: "Clicked simulation link",
         EventType.SCANNED_QR: "Scanned simulation QR",
         EventType.SUBMITTED_FORM_BOOLEAN: "Entered simulated verification flow",
+        EventType.REPLIED_SMS: "Replied to simulation SMS",
         EventType.VISITED_LANDING_PAGE: "Visited landing page",
         EventType.CLICKED_REPORT: "Reported suspicious message",
         EventType.TRAINING_COMPLETED: "Completed training",
+        EventType.ANSWERED_CALL: "Engaged with simulated caller",
+        EventType.DISCLOSED_ON_CALL: "Disclosed on an unverified call",
+        EventType.VERIFIED_CALLER: "Challenged caller identity",
+        EventType.ENDED_CALL_SAFELY: "Ended unverified call",
+        EventType.PLAYED_SYNTHETIC_MEDIA: "Played synthetic media",
+        EventType.TRUSTED_SYNTHETIC_MEDIA: "Acted on synthetic media",
+        EventType.FLAGGED_SYNTHETIC_MEDIA: "Flagged synthetic media",
+        EventType.VERIFIED_OUT_OF_BAND: "Verified out of band",
     }
     return labels.get(event_type, event_type.value.replace("_", " ").title())
 
@@ -370,6 +415,10 @@ def _fallback_triggers(employee: Employee, channel: str) -> list[str]:
         return ["qr_lure", "habit_autopilot"]
     if channel == Channel.SMS.value:
         return ["sms_trust", "urgency"]
+    if channel == Channel.VISHING.value:
+        return ["voice_pressure", "authority"]
+    if channel == Channel.DEEPFAKE.value:
+        return ["synthetic_likeness", "authority"]
     role_text = f"{employee.role_title} {employee.approved_context_summary or ''}".lower()
     if "finance" in role_text or "invoice" in role_text or "payment" in role_text:
         return ["authority", "role_relevance"]
@@ -385,6 +434,10 @@ def _theme_for_weakness(employee: Employee, channel: str, triggers: list[str]) -
         return "qr verification"
     if channel == Channel.SMS.value or "sms_trust" in trigger_set:
         return "policy update"
+    if channel == Channel.DEEPFAKE.value or "synthetic_likeness" in trigger_set:
+        return "executive approval request"
+    if channel == Channel.VISHING.value or "voice_pressure" in trigger_set:
+        return "vendor payment release"
     if "authority" in trigger_set or "role_relevance" in trigger_set:
         if "finance" in role_text or "invoice" in role_text or "payment" in role_text:
             return "invoice/payment approval"
@@ -472,6 +525,10 @@ def _recommended_action(risky_count: int, positive_count: int, event_counter: Co
         return "Assign QR micro-training, then retest with a different QR placement."
     if channel == Channel.SMS.value:
         return "Retest mobile trust behavior with an adjacent SMS workflow."
+    if channel == Channel.DEEPFAKE.value:
+        return "Assign synthetic-media training, then retest with a different persona and modality."
+    if channel == Channel.VISHING.value:
+        return "Drill the hang-up-and-call-back procedure, then retest with a new pretext."
     if priority_score >= 70:
         return "Schedule targeted micro-training and a short-window retest."
     return "Run a role-relevant retest and compare reporting response."
@@ -483,6 +540,10 @@ def _learning_objective(triggers: list[str], theme: str) -> str:
         return "Verify QR source, destination, and placement before scanning."
     if "sms_trust" in trigger_set:
         return "Confirm mobile alerts through a known company channel before acting."
+    if "synthetic_likeness" in trigger_set:
+        return "Treat a familiar voice or face as a claim, and verify it on a channel you chose."
+    if "voice_pressure" in trigger_set:
+        return "End unverified calls and call back on a number from the internal directory."
     if "urgency" in trigger_set:
         return "Slow down urgent workflow requests and verify through the official system."
     if "authority" in trigger_set:

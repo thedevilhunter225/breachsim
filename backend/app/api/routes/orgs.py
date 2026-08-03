@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,6 +12,7 @@ from app.models.entities import Department, Organization
 from app.models.enums import UserRole
 from app.schemas.employees import DepartmentCreate, DepartmentRead
 from app.services.audit import audit_log
+from app.services.deletion import delete_department
 
 router = APIRouter()
 
@@ -65,7 +67,20 @@ def create_department(
     department = Department(organization_id=user.organization_id, name=payload.name, code=payload.code)
     db.add(department)
     db.flush()
-    audit_log(db, organization_id=user.organization_id, user_id=user.id, action="department.create", resource_type="department", resource_id=str(department.id), details=payload.model_dump())
+    audit_log(db, organization_id=user.organization_id, user_id=user.id, action="department.create", resource_type="department", resource_id=str(department.id), details=payload.model_dump(mode="json"))
     db.commit()
     db.refresh(department)
     return department
+
+
+@router.delete("/departments/{department_id}")
+def delete_department_route(
+    department_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(require_roles(UserRole.ADMIN)),
+):
+    """Delete a department. Refused while employees are still assigned to it."""
+    result = delete_department(
+        db, organization_id=user.organization_id, department_id=department_id, actor=user
+    )
+    return result.as_dict()
