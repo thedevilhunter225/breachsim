@@ -17,6 +17,8 @@ class ScenarioGenerateRequest(BaseModel):
     prompt_instructions: str | None = None
     previous_failure_reasons: list[str] = Field(default_factory=list)
     prior_training_history: list[str] = Field(default_factory=list)
+    #: Required for the vishing and deepfake channels, ignored for the others.
+    persona_id: uuid.UUID | None = None
 
 
 class ScenarioEditRequest(BaseModel):
@@ -41,6 +43,7 @@ class ScenarioVersionRead(BaseModel):
     difficulty_score: int
     validation_result: dict[str, Any]
     notes: str | None
+    channel_payload: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 
@@ -56,4 +59,6 @@ class ScenarioRead(BaseModel):
     detected_persuasion_triggers: list[str]
     policy_validation: dict[str, Any]
     approved_at: datetime | None
+    persona_id: uuid.UUID | None = None
+    persona_display_name: str | None = None
     latest_version: ScenarioVersionRead | None = None

@@ -76,15 +76,66 @@ FAILURE_REASONS = [
     ("fear", "Fear", "The scenario used negative outcome pressure."),
     ("qr_lure", "QR lure", "The scenario used QR convenience."),
     ("sms_trust", "SMS trust", "The message relied on familiar SMS patterns."),
+    ("voice_pressure", "Voice pressure", "A live caller applied real-time social pressure."),
+    ("synthetic_likeness", "Synthetic likeness", "A familiar voice or face was trusted as proof of identity."),
     ("habit_autopilot", "Habit/autopilot", "Routine processing reduced caution."),
     ("role_relevance", "Role relevance", "The lure fit the employee workflow."),
 ]
 
 TRAINING_MODULES = [
-    ("Email triage in 45 seconds", "email", "urgency", ["Slow down", "Check sender context", "Use report button"], "Recognize urgency tactics in email simulations."),
-    ("QR pause-check-report", "qr", "qr_lure", ["Look for owned domain", "Expect a training banner", "Verify destination"], "Safe guidance for QR scanning."),
-    ("SMS verification habits", "sms", "sms_trust", ["Avoid rushing", "Use internal directory", "Open only approved links"], "SMS awareness micro-training."),
-    ("General social engineering signs", "general", "habit_autopilot", ["Pause", "Verify", "Report"], "General awareness refresher."),
+    (
+        "Email triage in 45 seconds",
+        "email",
+        "urgency",
+        ["Slow down", "Check sender context", "Use report button"],
+        "Recognize urgency tactics in email simulations.",
+    ),
+    (
+        "QR pause-check-report",
+        "qr",
+        "qr_lure",
+        ["Look for owned domain", "Expect a training banner", "Verify destination"],
+        "Safe guidance for QR scanning.",
+    ),
+    (
+        "SMS verification habits",
+        "sms",
+        "sms_trust",
+        ["Avoid rushing", "Use internal directory", "Open only approved links"],
+        "SMS awareness micro-training.",
+    ),
+    (
+        "Hang up, look up, call back",
+        "vishing",
+        "voice_pressure",
+        [
+            "Never act on a request while still on the inbound call",
+            "Find the number yourself in the internal directory",
+            "A caller who resists a call-back is the tell",
+        ],
+        "A caller cannot prove who they are over the phone. Verification means ending the call and "
+        "dialling a number you looked up yourself. Real colleagues expect this and will not object.",
+    ),
+    (
+        "Recognition is not verification",
+        "deepfake",
+        "synthetic_likeness",
+        [
+            "A familiar voice or face is a claim, not proof",
+            "Confirm high-value requests on a channel you chose",
+            "Treat requests for secrecy as the red flag they are",
+        ],
+        "Synthetic voice and video are now cheap enough to target ordinary approval workflows. "
+        "The only control that survives a convincing fake is out-of-band verification through a "
+        "channel the sender did not choose for you.",
+    ),
+    (
+        "General social engineering signs",
+        "general",
+        "habit_autopilot",
+        ["Pause", "Verify", "Report"],
+        "General awareness refresher.",
+    ),
 ]
 
 DEMO_EMPLOYEE_EMAIL_SUFFIX = "@northwind.example.com"

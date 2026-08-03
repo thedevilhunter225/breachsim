@@ -20,11 +20,13 @@ DEFAULT_POLICY = {
         "quote request",
         "document review",
         "qr verification",
+        "vendor payment release",
+        "executive approval request",
     ],
     "prohibited_words": ["wire transfer", "arrest", "police", "hospital", "lawsuit", "terror", "emergency"],
     "allowed_sender_names": ["BreachSim Training", "Security Awareness Team", "Northwind IT", "HR Operations"],
     "approved_training_domains": ["training.breachsim.local", "awareness.breachsim.local"],
-    "allowed_delivery_channels": ["email", "sms", "qr", "vishing"],
+    "allowed_delivery_channels": ["email", "sms", "qr", "vishing", "deepfake"],
     "difficulty_levels": ["low", "medium", "high"],
     "maximum_frequency_per_employee": 2,
     "working_hours_start": 9,
@@ -39,6 +41,10 @@ DEFAULT_POLICY = {
         "threats",
         "illegal impersonation",
         "real external brand abuse",
+        "impersonation without registered consent",
+        "synthetic media of a public figure",
+        "cloning a voice or likeness from scraped media",
+        "distributing generated media outside the platform",
     ],
 }
 
@@ -85,9 +91,15 @@ def validate_generation_request(policy: Policy, *, channel: Channel, theme: str,
     errors: list[str] = []
     warnings: list[str] = []
     if channel.value not in policy.allowed_delivery_channels:
-        errors.append(f"Channel {channel.value} is not allowed by policy.")
+        errors.append(
+            f"The {channel.value} channel is switched off in this organization's controls. "
+            "An administrator can enable it under Governance -> Controls."
+        )
     if theme not in policy.allowed_themes:
-        errors.append(f"Theme '{theme}' is not allowed by policy.")
+        errors.append(
+            f"Theme '{theme}' is not on the permitted list. "
+            "Add it under Governance -> Controls before generating this scenario."
+        )
     if difficulty_level.value not in policy.difficulty_levels:
         errors.append(f"Difficulty '{difficulty_level.value}' is not allowed by policy.")
     return PolicyValidationResult(passed=not errors, errors=errors, warnings=warnings)

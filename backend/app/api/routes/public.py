@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -10,9 +11,16 @@ from app.models.entities import Campaign, DeliveryAttempt, Employee, LandingToke
 from app.models.enums import EventType
 from app.services.events import classify_failure_reasons, create_event, resolve_scenario_for_token
 from app.services.scoring import recalculate_employee_risk
+from app.services.simulation import complete_simulation, load_simulation, record_response
 from app.services.training import assign_micro_training
 
 router = APIRouter()
+
+
+class SimulationResponseRequest(BaseModel):
+    step_key: str = Field(min_length=1, max_length=64)
+    response_key: str = Field(min_length=1, max_length=64)
+    elapsed_ms: int = 0
 
 
 @router.get("/training/{token}")
@@ -100,3 +108,29 @@ def track_event(payload: dict, db: Annotated[Session, Depends(get_db)]):
     if not token:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="token is required")
     return track_training_event(token, payload, db)
+
+
+@router.get("/simulation/{token}")
+def get_simulation(token: str, db: Annotated[Session, Depends(get_db)]):
+    """Framing plus the single step the employee is currently on."""
+    return load_simulation(db, token)
+
+
+@router.post("/simulation/{token}/respond")
+def post_simulation_response(
+    token: str,
+    payload: SimulationResponseRequest,
+    db: Annotated[Session, Depends(get_db)],
+):
+    return record_response(
+        db,
+        token=token,
+        step_key=payload.step_key,
+        response_key=payload.response_key,
+        elapsed_ms=payload.elapsed_ms,
+    )
+
+
+@router.post("/simulation/{token}/complete")
+def post_simulation_complete(token: str, db: Annotated[Session, Depends(get_db)]):
+    return complete_simulation(db, token)

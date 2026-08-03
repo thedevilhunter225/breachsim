@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.crypto import pseudonymous_id
 from app.models.entities import Campaign, EventLog, LandingToken, Scenario
-from app.models.enums import Channel, EventType
+from app.models.enums import RISKY_EVENT_TYPES, Channel, EventType
 
 FAILURE_REASON_BY_TRIGGER = {
     "authority": "authority",
@@ -16,20 +16,33 @@ FAILURE_REASON_BY_TRIGGER = {
     "fear": "fear",
     "qr lure": "qr_lure",
     "sms trust": "sms_trust",
+    "voice pressure": "voice_pressure",
+    "synthetic likeness": "synthetic_likeness",
     "habit/autopilot": "habit_autopilot",
     "role-relevance": "role_relevance",
 }
 
+#: Fallback reason when a scenario carries no persuasion triggers of its own.
+DEFAULT_REASON_BY_EVENT = {
+    EventType.SCANNED_QR: "qr_lure",
+    EventType.CLICKED_LINK: "curiosity",
+    EventType.REPLIED_SMS: "sms_trust",
+    EventType.DISCLOSED_ON_CALL: "voice_pressure",
+    EventType.TRUSTED_SYNTHETIC_MEDIA: "synthetic_likeness",
+    EventType.SUBMITTED_FORM_BOOLEAN: "habit_autopilot",
+}
+
 
 def classify_failure_reasons(event_type: EventType, scenario: Scenario | None) -> list[str]:
-    if event_type in {EventType.CLICKED_LINK, EventType.SUBMITTED_FORM_BOOLEAN, EventType.SCANNED_QR} and scenario:
-        reasons = [FAILURE_REASON_BY_TRIGGER.get(trigger, trigger) for trigger in scenario.detected_persuasion_triggers]
-        return reasons or ["habit_autopilot"]
-    if event_type == EventType.SCANNED_QR:
-        return ["qr_lure"]
-    if event_type == EventType.CLICKED_LINK:
-        return ["curiosity"]
-    return []
+    if event_type not in RISKY_EVENT_TYPES:
+        return []
+    fallback = DEFAULT_REASON_BY_EVENT.get(event_type, "habit_autopilot")
+    if scenario and scenario.detected_persuasion_triggers:
+        return [
+            FAILURE_REASON_BY_TRIGGER.get(trigger, trigger)
+            for trigger in scenario.detected_persuasion_triggers
+        ]
+    return [fallback]
 
 
 def create_event(

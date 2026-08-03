@@ -13,9 +13,23 @@ from app.models.entities import Campaign, CampaignScenario, CampaignTarget, Deli
 from app.models.enums import CampaignStatus, UserRole
 from app.schemas.campaigns import CampaignCreate, CampaignRead, CampaignUpdate, DeliveryAttemptRead
 from app.services.audit import audit_log
-from app.services.delivery import deliver_campaign_email, launch_campaign_sandbox
+from app.services.deletion import delete_campaign
+from app.services.delivery import deliver_campaign, deliver_campaign_email, launch_campaign_sandbox
 
 router = APIRouter()
+
+
+def serialize_attempt(attempt: DeliveryAttempt) -> DeliveryAttemptRead:
+    return DeliveryAttemptRead(
+        id=str(attempt.id),
+        campaign_id=str(attempt.campaign_id),
+        employee_id=str(attempt.employee_id),
+        channel=attempt.channel,
+        status=attempt.status,
+        sandbox_mode=attempt.sandbox_mode,
+        preview_payload=attempt.preview_payload,
+        delivered_at=attempt.delivered_at,
+    )
 
 
 def serialize_campaign(campaign: Campaign) -> CampaignRead:
@@ -158,37 +172,21 @@ def approve_campaign(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_
 @router.post("/campaigns/{campaign_id}/launch-sandbox", response_model=list[DeliveryAttemptRead])
 def launch_sandbox(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER))):
     attempts = launch_campaign_sandbox(db, campaign_id=campaign_id, actor=user)
-    return [
-        DeliveryAttemptRead(
-            id=str(attempt.id),
-            campaign_id=str(attempt.campaign_id),
-            employee_id=str(attempt.employee_id),
-            channel=attempt.channel,
-            status=attempt.status,
-            sandbox_mode=attempt.sandbox_mode,
-            preview_payload=attempt.preview_payload,
-            delivered_at=attempt.delivered_at,
-        )
-        for attempt in attempts
-    ]
+    return [serialize_attempt(attempt) for attempt in attempts]
+
+
+@router.post("/campaigns/{campaign_id}/deliver", response_model=list[DeliveryAttemptRead])
+def deliver(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER))):
+    """Run a campaign for real on whichever channel it targets."""
+    attempts = deliver_campaign(db, campaign_id=campaign_id, actor=user)
+    return [serialize_attempt(attempt) for attempt in attempts]
 
 
 @router.post("/campaigns/{campaign_id}/deliver-email", response_model=list[DeliveryAttemptRead])
 def deliver_email(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER))):
+    """Retained for existing integrations; prefer the channel-agnostic /deliver endpoint."""
     attempts = deliver_campaign_email(db, campaign_id=campaign_id, actor=user)
-    return [
-        DeliveryAttemptRead(
-            id=attempt.id,
-            campaign_id=attempt.campaign_id,
-            employee_id=attempt.employee_id,
-            channel=attempt.channel,
-            status=attempt.status,
-            sandbox_mode=attempt.sandbox_mode,
-            preview_payload=attempt.preview_payload,
-            delivered_at=attempt.delivered_at,
-        )
-        for attempt in attempts
-    ]
+    return [serialize_attempt(attempt) for attempt in attempts]
 
 
 @router.post("/campaigns/{campaign_id}/pause", response_model=CampaignRead)
@@ -202,6 +200,24 @@ def pause_campaign(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db
     return serialize_campaign(campaign)
 
 
+@router.delete("/campaigns/{campaign_id}")
+def delete(
+    campaign_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    purge_evidence: bool = False,
+    user=Depends(require_roles(UserRole.ADMIN)),
+):
+    """Delete a campaign. Active campaigns must be paused; recorded evidence needs purge_evidence."""
+    result = delete_campaign(
+        db,
+        organization_id=user.organization_id,
+        campaign_id=campaign_id,
+        actor=user,
+        purge_evidence=purge_evidence,
+    )
+    return result.as_dict()
+
+
 @router.get("/delivery-attempts", response_model=list[DeliveryAttemptRead])
 def list_delivery_attempts(db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
     attempts = (
@@ -211,16 +227,4 @@ def list_delivery_attempts(db: Annotated[Session, Depends(get_db)], user=Depends
         .order_by(DeliveryAttempt.created_at.desc())
         .all()
     )
-    return [
-        DeliveryAttemptRead(
-            id=str(attempt.id),
-            campaign_id=str(attempt.campaign_id),
-            employee_id=str(attempt.employee_id),
-            channel=attempt.channel,
-            status=attempt.status,
-            sandbox_mode=attempt.sandbox_mode,
-            preview_payload=attempt.preview_payload,
-            delivered_at=attempt.delivered_at,
-        )
-        for attempt in attempts
-    ]
+    return [serialize_attempt(attempt) for attempt in attempts]

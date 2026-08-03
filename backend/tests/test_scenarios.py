@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.llm import LLMProviderError
+
 
 def test_generate_and_approve_scenario(client, admin_headers):
     employee_id = client.get("/api/v1/employees", headers=admin_headers).json()[0]["id"]
@@ -66,3 +68,32 @@ def test_policy_blocks_disallowed_theme(client, admin_headers):
         },
     )
     assert response.status_code == 400
+
+
+def test_generation_falls_back_when_provider_output_is_invalid(client, admin_headers, monkeypatch):
+    class InvalidProvider:
+        def generate(self, _prompt):
+            raise LLMProviderError("invalid provider response")
+
+    monkeypatch.setattr(
+        "app.services.scenario_service.get_default_llm_provider",
+        lambda: InvalidProvider(),
+    )
+    employee_id = client.get("/api/v1/employees", headers=admin_headers).json()[0]["id"]
+
+    response = client.post(
+        "/api/v1/scenarios/generate",
+        headers=admin_headers,
+        json={
+            "employee_id": employee_id,
+            "channel": "email",
+            "theme": "invoice/payment approval",
+            "difficulty_level": "medium",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    metadata = response.json()["latest_version"]["rationale_metadata"]
+    assert metadata["provider"] == "rule-based"
+    assert metadata["provider_status"] == "fallback"
+    assert metadata["fallback_from"] == "InvalidProvider"

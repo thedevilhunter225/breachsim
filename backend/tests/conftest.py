@@ -10,6 +10,8 @@ if TEST_DB.exists():
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
 os.environ["FRONTEND_BASE_URL"] = "http://localhost:3000"
 os.environ["SEED_DEMO_CONTENT"] = "true"
+os.environ["SECRET_KEY"] = "breachsim-test-signing-key-32-bytes-minimum"
+os.environ["LLM_PROVIDER"] = "rule_based"
 
 import pytest
 from fastapi.testclient import TestClient

@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.models.entities import Scenario
 from app.models.enums import UserRole
 from app.schemas.scenarios import ScenarioEditRequest, ScenarioGenerateRequest, ScenarioRead, ScenarioVersionRead
+from app.services.deletion import delete_scenario
 from app.services.scenario_service import approve_scenario, create_scenario_version, generate_scenario, reject_scenario
 
 router = APIRouter()
@@ -30,6 +31,8 @@ def serialize_scenario(scenario: Scenario) -> ScenarioRead:
         detected_persuasion_triggers=scenario.detected_persuasion_triggers,
         policy_validation=scenario.policy_validation,
         approved_at=scenario.approved_at,
+        persona_id=scenario.persona_id,
+        persona_display_name=scenario.persona.display_name if scenario.persona else None,
         latest_version=ScenarioVersionRead.model_validate(latest) if latest else None,
     )
 
@@ -92,6 +95,17 @@ def approve(scenario_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], use
     if not scenario:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scenario not found")
     return serialize_scenario(approve_scenario(db, scenario=scenario, actor=user))
+
+
+@router.delete("/scenarios/{scenario_id}")
+def delete(
+    scenario_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
+):
+    """Delete a scenario. Refused while any campaign still references it."""
+    result = delete_scenario(db, organization_id=user.organization_id, scenario_id=scenario_id, actor=user)
+    return result.as_dict()
 
 
 @router.post("/scenarios/{scenario_id}/reject", response_model=ScenarioRead)
