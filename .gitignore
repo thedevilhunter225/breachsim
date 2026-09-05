@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
 *.pem
 *.key
 *.crt
@@ -31,6 +32,14 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Terraform local state and plans (the provider lock file is committed)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
+crash.log
+
 # Databases and generated runtime state
 *.db
 *.sqlite
@@ -41,6 +50,8 @@ backend/breachsim.db
 sample_outputs/generated/
 
 # Local QA artifacts
+.runtime/
+coverage/
 risk-intelligence-qa.png
 *.zip
 *.log

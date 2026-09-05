@@ -73,7 +73,11 @@ class Api:
 
     def login_all(self) -> None:
         for role, (email, password) in ACCOUNTS.items():
-            response = self.client.post(f"{self.base}/auth/login", json={"email": email, "password": password})
+            response = self.client.post(
+                f"{self.base}/auth/login",
+                json={"email": email, "password": password},
+                headers={"X-BreachSim-API-Client": "bearer"},
+            )
             response.raise_for_status()
             self.tokens[role] = response.json()["access_token"]
 

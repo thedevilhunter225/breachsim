@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import re
 
-from fastapi import HTTPException, status
 import httpx
+from fastapi import HTTPException, status
 
 from app.models.entities import Organization
 from app.schemas.integrations import SmsIntegrationRead, SmsIntegrationUpdate

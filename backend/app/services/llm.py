@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
-from typing import Protocol
 import re
+import time
+from dataclasses import dataclass
+from typing import Any, Callable, Protocol
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.core.config import settings
 from app.models.enums import Channel, DifficultyLevel
@@ -21,6 +23,7 @@ class ScenarioPrompt:
     employee_name: str
     role_title: str
     department_name: str
+    company_name: str
     channel: Channel
     theme: str
     difficulty_level: DifficultyLevel
@@ -130,138 +133,172 @@ class RuleBasedLLMProvider:
         }
 
 
-class GeminiLLMProvider:
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+class _ScenarioGenerationResponse(BaseModel):
+    """Validated boundary between an external model and application content."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str = Field(min_length=1, max_length=300)
+    subject: str = Field(min_length=1, max_length=300)
+    body_copy: str = Field(min_length=1, max_length=8_000)
+    cta_text: str = Field(min_length=1, max_length=100)
+    landing_page_copy: str = Field(min_length=1, max_length=2_000)
+    opening_line: str = Field(max_length=2_000)
+    transcript: str = Field(max_length=8_000)
+    requested_action: str = Field(max_length=1_000)
+    rationale_metadata: dict[str, Any]
+    detected_persuasion_triggers: list[str] = Field(min_length=1, max_length=20)
+    difficulty_score: int = Field(ge=0, le=100)
+
+
+_TOGETHER_ENDPOINT = "https://api.together.ai/v1/chat/completions"
+_RETRYABLE_TOGETHER_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+
+
+class TogetherAIProvider:
+    """Together chat-completions adapter behind the provider protocol.
+
+    The adapter receives a fully local ``ScenarioPrompt`` but serializes only placeholders
+    and non-identifying scenario controls. Personalization happens after response validation.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "openai/gpt-oss-20b",
+        *,
+        timeout_seconds: float = 45.0,
+        max_retries: int = 2,
+        client: httpx.Client | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
+        if not api_key.strip():
+            raise ValueError("Together API key must not be empty")
         self.api_key = api_key
         self.model = model
+        self.timeout = httpx.Timeout(timeout_seconds, connect=min(5.0, timeout_seconds))
+        self.max_retries = max_retries
+        self.client = client
+        self.sleep = sleep
 
     def generate(self, prompt: ScenarioPrompt) -> dict:
+        schema = _scenario_json_schema()
         request_payload = {
-            "contents": [
+            "model": self.model,
+            "messages": [
                 {
-                    "parts": [
-                        {
-                            "text": _build_gemini_prompt(prompt),
-                        }
-                    ]
-                }
+                    "role": "system",
+                    "content": _build_together_instructions(schema),
+                },
+                {
+                    "role": "user",
+                    "content": _build_together_prompt(prompt),
+                },
             ],
-            "generationConfig": {
-                "temperature": 0.8,
-                "topP": 0.95,
-                "responseMimeType": "application/json",
-            },
-        }
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
-
-        try:
-            response = httpx.post(
-                endpoint,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": self.api_key,
-                },
-                json=request_payload,
-                timeout=30.0,
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise LLMProviderError(f"Gemini request failed: {exc}") from exc
-
-        response_text = _extract_gemini_text(response.json())
-        result = _parse_json_payload(response_text)
-        return _normalize_llm_result(result, prompt, provider_name="gemini", model_name=self.model)
-
-
-class OpenAILLMProvider:
-    def __init__(self, api_key: str, model: str = "gpt-4.1-mini"):
-        self.api_key = api_key
-        self.model = model
-
-    def generate(self, prompt: ScenarioPrompt) -> dict:
-        request_payload = {
-            "model": self.model,
-            "instructions": _build_openai_instructions(),
-            "input": _build_llm_prompt(prompt),
             "temperature": 0.75,
-            "max_output_tokens": 1200,
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "scenario_generation",
-                    "strict": True,
-                    "schema": _scenario_json_schema(),
-                }
-            },
-        }
-
-        try:
-            response = httpx.post(
-                "https://api.openai.com/v1/responses",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=request_payload,
-                timeout=45.0,
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise LLMProviderError(f"OpenAI request failed: {exc}") from exc
-
-        response_text = _extract_openai_text(response.json())
-        result = _parse_json_payload(response_text)
-        return _normalize_llm_result(result, prompt, provider_name="openai", model_name=self.model)
-
-
-class OllamaLLMProvider:
-    def __init__(self, base_url: str = "http://127.0.0.1:11434", model: str = "llama2-uncensored:latest"):
-        self.base_url = base_url.rstrip("/")
-        self.model = model
-
-    def generate(self, prompt: ScenarioPrompt) -> dict:
-        request_payload = {
-            "model": self.model,
-            "prompt": _build_ollama_prompt(prompt),
+            "max_tokens": 1200,
             "stream": False,
-            "format": "json",
-            "options": {
-                "temperature": 0.35,
-                "top_p": 0.85,
-                "num_ctx": 1024,
-                "num_predict": 320,
+            "context_length_exceeded_behavior": "error",
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "scenario_generation",
+                    "schema": schema,
+                },
             },
         }
 
-        try:
-            response = httpx.post(
-                f"{self.base_url}/api/generate",
-                json=request_payload,
-                timeout=300.0,
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise LLMProviderError(f"Ollama request failed: {exc}") from exc
-
-        response_text = str(response.json().get("response") or "").strip()
-        if not response_text:
-            raise LLMProviderError("Ollama returned an empty response")
+        response = self._request(request_payload)
+        response_text = _extract_together_text(response)
         result = _parse_json_payload(response_text)
-        return _normalize_llm_result(result, prompt, provider_name="ollama", model_name=self.model)
+        try:
+            validated = _ScenarioGenerationResponse.model_validate(result).model_dump()
+        except ValidationError as exc:
+            raise LLMProviderError("Together returned a response that failed scenario validation") from exc
+        return _normalize_llm_result(validated, prompt, provider_name="together", model_name=self.model)
+
+    def _request(self, request_payload: dict) -> dict:
+        owned_client = self.client is None
+        client = self.client or httpx.Client(timeout=self.timeout, follow_redirects=False)
+        try:
+            for attempt in range(self.max_retries + 1):
+                try:
+                    response = client.post(
+                        _TOGETHER_ENDPOINT,
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                            "User-Agent": "BreachSim/0.1 TogetherProvider",
+                        },
+                        json=request_payload,
+                        timeout=self.timeout,
+                    )
+                except httpx.TimeoutException as exc:
+                    if attempt < self.max_retries:
+                        self.sleep(_retry_delay(attempt, None))
+                        continue
+                    raise LLMProviderError("Together request timed out after retries") from exc
+                except httpx.TransportError as exc:
+                    if attempt < self.max_retries:
+                        self.sleep(_retry_delay(attempt, None))
+                        continue
+                    raise LLMProviderError("Together request failed because the provider was unreachable") from exc
+
+                if response.status_code in _RETRYABLE_TOGETHER_STATUS_CODES:
+                    if attempt < self.max_retries:
+                        self.sleep(
+                            _retry_delay(
+                                attempt,
+                                response.headers.get("Retry-After")
+                                or response.headers.get("x-ratelimit-reset"),
+                            )
+                        )
+                        continue
+                    if response.status_code == 429:
+                        raise LLMProviderError("Together rate limit was exceeded after retries")
+                    raise LLMProviderError(f"Together remained unavailable after retries (HTTP {response.status_code})")
+
+                if response.status_code >= 400:
+                    raise LLMProviderError(f"Together rejected the request (HTTP {response.status_code})")
+
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    raise LLMProviderError("Together returned a non-JSON API response") from exc
+                if not isinstance(payload, dict):
+                    raise LLMProviderError("Together returned an invalid API response")
+                return payload
+        finally:
+            if owned_client:
+                client.close()
+
+        raise LLMProviderError("Together request failed")
+
+
+def _retry_delay(attempt: int, retry_after: str | None) -> float:
+    if retry_after:
+        match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(ms|s)?\s*", retry_after, flags=re.IGNORECASE)
+        if match:
+            delay = float(match.group(1))
+            if (match.group(2) or "").lower() == "ms":
+                delay /= 1_000
+            return max(0.0, min(delay, 10.0))
+    return min(0.5 * (2**attempt), 4.0)
 
 
 def get_default_llm_provider() -> LLMProvider:
-    provider = settings.llm_provider.lower().strip()
-    if provider == "ollama":
-        return OllamaLLMProvider(base_url=settings.ollama_base_url, model=settings.ollama_model)
-    if provider == "openai" and settings.openai_api_key:
-        return OpenAILLMProvider(api_key=settings.openai_api_key, model=settings.openai_model)
-    if provider == "gemini" and settings.gemini_api_key:
-        return GeminiLLMProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
-    if settings.openai_api_key:
-        return OpenAILLMProvider(api_key=settings.openai_api_key, model=settings.openai_model)
-    if settings.gemini_api_key:
-        return GeminiLLMProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
+    provider = settings.ai_provider.lower().strip()
+    if (
+        provider == "together"
+        and settings.together_api_key
+        and settings.together_api_key.get_secret_value().strip()
+    ):
+        return TogetherAIProvider(
+            api_key=settings.together_api_key.get_secret_value(),
+            model=settings.together_model,
+            timeout_seconds=settings.together_timeout_seconds,
+            max_retries=settings.together_max_retries,
+        )
     return RuleBasedLLMProvider()
 
 
@@ -412,12 +449,15 @@ def _detect_triggers(prompt: ScenarioPrompt) -> list[str]:
     return list(dict.fromkeys(triggers or ["curiosity"]))
 
 
-def _build_openai_instructions() -> str:
+def _build_together_instructions(schema: dict) -> str:
     return (
         "You generate realistic phishing simulation copy for an internal security awareness platform.\n"
-        "Use only the supplied employee and business context.\n"
+        "The request intentionally contains placeholders instead of employee or organization PII. "
+        "Keep placeholders such as {{first_name}}, {{company_name}}, {{department}}, and {{role_title}} "
+        "unchanged so the backend can personalize the approved result locally. Never invent a person's name, "
+        "email address, phone number, employee identifier, or company name.\n"
         "Do not reference external brands, law enforcement, hospitals, threats, harassment, or real credential capture.\n"
-        "Keep the initial email, SMS, or QR poster realistic and business-like. Do not call the initial lure a demo or training message.\n"
+        "Keep the initial email, SMS, or QR email realistic and business-like. Do not call the initial lure a demo or training message.\n"
         "Use platform-owned review/verification language, not real external brand impersonation.\n"
         "For email and SMS, use cta_text exactly as clickhere unless the channel is QR or vishing.\n"
         "Do not put the tracking URL in body_copy; the delivery service injects the unique link.\n"
@@ -426,56 +466,65 @@ def _build_openai_instructions() -> str:
         "opening_line is the caller's first sentence on answering. Write natural spoken language, not email prose.\n"
         "For the deepfake channel, transcript is what the impersonated persona says in the simulated "
         "voice note or video, and requested_action is the single action they ask for. Only ever impersonate "
-        "the supplied persona; never a real named public figure or an external organization.\n"
+        "the supplied placeholder persona; never a real named public figure or an external organization.\n"
         "Leave opening_line, transcript and requested_action as empty strings for the email, sms and qr channels.\n"
-        "Return only JSON matching the requested schema.\n"
+        "Return only JSON matching this schema exactly:\n"
+        f"{json.dumps(schema, separators=(',', ':'))}\n"
     )
 
 
-def _build_gemini_prompt(prompt: ScenarioPrompt) -> str:
-    return (
-        _build_openai_instructions()
-        + "Return JSON only with these keys: title, subject, body_copy, cta_text, landing_page_copy, opening_line, transcript, requested_action, rationale_metadata, detected_persuasion_triggers, difficulty_score.\n"
-        "rationale_metadata must be an object. detected_persuasion_triggers must be an array of short strings. difficulty_score must be an integer from 0 to 100.\n"
-        + _build_llm_prompt(prompt)
-    )
-
-
-def _build_ollama_prompt(prompt: ScenarioPrompt) -> str:
-    return (
-        "Generate one realistic internal phishing simulation draft for an authorized security awareness platform.\n"
-        "Use only the employee context below. Do not use external brands. Do not include URLs. Do not use placeholder braces.\n"
-        "Initial message must not say training or simulation. Landing copy must say security awareness training and not to enter real credentials.\n"
-        "For email or SMS, cta_text must be clickhere. For QR, cta_text must be Scan to open.\n"
-        "For vishing write body_copy as spoken caller dialogue. For deepfake write transcript as the spoken message.\n"
-        "Return compact JSON only with keys: title, subject, body_copy, cta_text, landing_page_copy, opening_line, transcript, requested_action, rationale_metadata, detected_persuasion_triggers, difficulty_score.\n"
-        "Keep body_copy under 70 words. Keep landing_page_copy under 35 words.\n\n"
-        + _build_llm_prompt(prompt)
-    )
-
-
-def _build_llm_prompt(prompt: ScenarioPrompt) -> str:
+def _build_together_prompt(prompt: ScenarioPrompt) -> str:
+    safe_theme = _sanitize_external_text(prompt.theme, prompt, max_length=200)
+    safe_instructions = _sanitize_external_text(prompt.prompt_instructions or "none", prompt, max_length=1_000)
     base = (
-        f"Employee name: {prompt.employee_name}\n"
-        f"Role title: {prompt.role_title}\n"
-        f"Department: {prompt.department_name}\n"
+        "Generate one authorized internal simulation draft using these placeholders verbatim.\n"
+        "Employee first name: {{first_name}}\n"
+        "Employee full name, only if required: {{employee_name}}\n"
+        "Company: {{company_name}}\n"
+        "Role title: {{role_title}}\n"
+        "Department: {{department}}\n"
         f"Channel: {prompt.channel.value}\n"
-        f"Theme: {prompt.theme}\n"
+        f"Theme: {safe_theme}\n"
         f"Difficulty: {prompt.difficulty_level.value}\n"
-        f"Context profile: {prompt.context_profile}\n"
-        f"Admin prompt instructions: {prompt.prompt_instructions or 'none'}\n"
-        f"Previous failure reasons: {', '.join(prompt.previous_failure_reasons) or 'none'}\n"
-        f"Prior training history: {', '.join(prompt.prior_training_history) or 'none'}\n"
+        "Employee context profile: omitted for privacy; use only the role and department placeholders.\n"
+        f"Sanitized admin prompt instructions: {safe_instructions}\n"
+        "Employee failure and training history: omitted for privacy.\n"
     )
     if prompt.channel in {Channel.VISHING, Channel.DEEPFAKE} and prompt.persona:
         persona = prompt.persona
         base += (
-            f"Approved persona to imitate: {persona.display_name} ({persona.role_title})\n"
-            f"Persona relationship to target: {persona.relationship_to_targets}\n"
+            "Approved persona to imitate: {{persona_name}} ({{persona_role}})\n"
+            "Persona relationship to target: approved internal colleague\n"
             f"Persona presentation: {persona.modality.value.replace('_', ' ')}\n"
             "Imitate only this approved persona. Do not name any other individual or company.\n"
         )
     return base
+
+
+def _sanitize_external_text(value: str, prompt: ScenarioPrompt, *, max_length: int) -> str:
+    """Remove known identifiers from operator-authored text before an external request."""
+
+    replacements = {
+        prompt.employee_name: "{{employee_name}}",
+        prompt.company_name: "{{company_name}}",
+        prompt.department_name: "{{department}}",
+        prompt.role_title: "{{role_title}}",
+    }
+    name_parts = [part for part in re.findall(r"[A-Za-z][A-Za-z'-]+", prompt.employee_name) if len(part) >= 3]
+    for index, part in enumerate(name_parts):
+        replacements[part] = "{{first_name}}" if index == 0 else "{{employee_name}}"
+    if prompt.persona:
+        replacements[prompt.persona.display_name] = "{{persona_name}}"
+        replacements[prompt.persona.role_title] = "{{persona_role}}"
+
+    cleaned = value
+    for source, placeholder in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
+        if source.strip():
+            cleaned = re.sub(re.escape(source), placeholder, cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "{{email_address}}", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"(?<!\w)(?:\+?\d[\d ().-]{7,}\d)(?!\w)", "{{phone_number}}", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:max_length] or "none"
 
 
 def _scenario_json_schema() -> dict:
@@ -514,34 +563,20 @@ def _scenario_json_schema() -> dict:
     }
 
 
-def _extract_gemini_text(payload: dict) -> str:
-    candidates = payload.get("candidates") or []
-    if not candidates:
-        raise LLMProviderError("Gemini returned no candidates")
-
-    parts = candidates[0].get("content", {}).get("parts", [])
-    text_segments = [part.get("text", "") for part in parts if part.get("text")]
-    text = "\n".join(text_segments).strip()
-    if not text:
-        raise LLMProviderError("Gemini returned an empty response")
-    return text
-
-
-def _extract_openai_text(payload: dict) -> str:
-    text = payload.get("output_text")
-    if isinstance(text, str) and text.strip():
-        return text.strip()
-
-    output = payload.get("output") or []
-    text_segments: list[str] = []
-    for item in output:
-        for content in item.get("content", []) if isinstance(item, dict) else []:
-            if content.get("type") == "output_text" and content.get("text"):
-                text_segments.append(content["text"])
-    extracted = "\n".join(text_segments).strip()
-    if not extracted:
-        raise LLMProviderError("OpenAI returned an empty response")
-    return extracted
+def _extract_together_text(payload: dict) -> str:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise LLMProviderError("Together returned no completion choices")
+    choice = choices[0]
+    if choice.get("finish_reason") == "length":
+        raise LLMProviderError("Together response was truncated before the JSON document completed")
+    message = choice.get("message")
+    if not isinstance(message, dict):
+        raise LLMProviderError("Together returned an invalid completion message")
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise LLMProviderError("Together returned an empty completion")
+    return content.strip()
 
 
 def _parse_json_payload(raw_text: str) -> dict:
@@ -664,7 +699,20 @@ def _clean_generated_copy(value: str, prompt: ScenarioPrompt) -> str:
 
 
 def _replace_context_placeholders(value: str, prompt: ScenarioPrompt) -> str:
+    first_name = prompt.employee_name.split()[0] if prompt.employee_name.split() else prompt.employee_name
+    persona = prompt.resolved_persona()
     replacements = {
+        "{{first_name}}": first_name,
+        "{first_name}": first_name,
+        "{{company_name}}": prompt.company_name,
+        "{company_name}": prompt.company_name,
+        "{{department}}": prompt.department_name,
+        "{department}": prompt.department_name,
+        "{{persona_name}}": persona.display_name,
+        "{persona_name}": persona.display_name,
+        "{{persona_role}}": persona.role_title,
+        "{persona_role}": persona.role_title,
+        "{{employee_name}}": prompt.employee_name,
         "{user}": prompt.employee_name,
         "{username}": prompt.employee_name,
         "{employeeName}": prompt.employee_name,
@@ -672,7 +720,6 @@ def _replace_context_placeholders(value: str, prompt: ScenarioPrompt) -> str:
         "{{user}}": prompt.employee_name,
         "{{username}}": prompt.employee_name,
         "{{employeeName}}": prompt.employee_name,
-        "{{employee_name}}": prompt.employee_name,
         "{roleTitle}": prompt.role_title,
         "{role_title}": prompt.role_title,
         "{{roleTitle}}": prompt.role_title,
@@ -691,6 +738,6 @@ def _replace_context_placeholders(value: str, prompt: ScenarioPrompt) -> str:
         "{{invoiceId}}": _workflow_reference(prompt),
     }
     cleaned = value
-    for placeholder, replacement in replacements.items():
+    for placeholder, replacement in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
         cleaned = cleaned.replace(placeholder, replacement)
     return cleaned

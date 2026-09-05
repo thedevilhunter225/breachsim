@@ -29,7 +29,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <NavShell user={session.user} onLogout={() => { signOut(); router.replace("/login"); }}>
+    <NavShell
+      user={session.user}
+      onLogout={() => {
+        void signOut().then(() => router.replace("/login"));
+      }}
+    >
       {children}
     </NavShell>
   );

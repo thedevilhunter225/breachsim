@@ -2,10 +2,10 @@
 
 Verified against a running instance with `python scripts/verify_channels.py`
 (16 capabilities working, 0 failing, 1 optional provider outstanding) and
-`python -m pytest tests` (32 passing).
+`python -m pytest tests` (70 passing).
 
-**Scale:** 5 channels · 74 API endpoints · 29 database tables · 19 event types ·
-18 frontend routes · 39 automated tests · real ElevenLabs/D-ID cloning behind a pluggable
+**Scale:** 5 channels · 83 API endpoints · 30 database tables · 19 event types ·
+18 frontend routes · 70 automated backend tests · real ElevenLabs/D-ID cloning behind a pluggable
 provider layer.
 
 ---
@@ -16,7 +16,7 @@ provider layer.
 |---|---|---|---|
 | 1.1 | **Email phishing** | Working | SMTP send to allowlisted mailboxes, tracked link |
 | 1.2 | **SMS / smishing** | Working (sandbox) | Full pipeline; **real carrier send needs a paid gateway** |
-| 1.3 | **QR phishing** | Working | Printable poster, tracked scan code, downloadable PNG |
+| 1.3 | **QR phishing** | Working | Tracked scan code embedded in the email body; no downloadable attachment |
 | 1.4 | **Voice / vishing** | Working | Branching call, spoofed caller ID, in-browser speech |
 | 1.5 | **Deepfake impersonation** | Working | Voice-note or video message from a consented persona |
 
@@ -59,10 +59,10 @@ provider layer.
 
 | # | Feature | Status |
 |---|---|---|
-| 2.1 | Pluggable providers: Ollama, OpenAI, Gemini | Working |
+| 2.1 | Pluggable provider interface: Together AI plus deterministic fallback | Working |
 | 2.2 | Deterministic rule-based generator — **works with no LLM at all** | Working |
 | 2.3 | Automatic fallback when a provider errors or returns invalid JSON | Working |
-| 2.4 | Channel-aware content (email body, SMS copy, QR poster, call script, transcript) | Working |
+| 2.4 | Channel-aware content (email body, SMS copy, QR email, call script, transcript) | Working |
 | 2.5 | LLM supplies narrative only; branch structure and scoring built deterministically | Working |
 | 2.6 | Employee-context personalisation (role, department, approved profile) | Working |
 | 2.7 | Persuasion-trigger detection and difficulty scoring (0–100) | Working |
@@ -81,7 +81,7 @@ provider layer.
 | 3.3 | Allowed-theme catalogue with custom themes | Working |
 | 3.4 | Prohibited words and topics — hard block, not a warning | Working |
 | 3.5 | Approved training domains | Working |
-| 3.6 | Working-hours window and per-employee frequency cap | Working |
+| 3.6 | Working-hours window and rolling 30-day per-employee frequency cap | Working |
 | 3.7 | Two-person rule on campaign approval | Working |
 | 3.8 | Policy versioning with snapshots | Working |
 | 3.9 | Employee opt-out respected | Working |
@@ -110,7 +110,7 @@ provider layer.
 | 4.2 | Dual-approval workflow (request → approve → second approve) | Working |
 | 4.3 | Sandbox preview — full pipeline with nothing sent | Working |
 | 4.4 | Channel-agnostic delivery dispatch | Working |
-| 4.5 | Per-channel admin previews (email, SMS, QR poster, call, media) | Working |
+| 4.5 | Per-channel admin previews (email, SMS, inline QR email, call, media) | Working |
 | 4.6 | Copyable tokenized entry links per channel | Working |
 | 4.7 | Recipient allowlists on email and SMS | Working |
 | 4.8 | Graceful degradation to labelled sandbox when no provider is enabled | Working |
@@ -163,7 +163,7 @@ provider layer.
 | 7.4 | Authorization chain in report (who created, who approved) | Working |
 | 7.5 | Impersonation authorization section (persona, consent window) | Working |
 | 7.6 | Interaction decision trail with timings | Working |
-| 7.7 | Authenticated blob download (bearer token, not a bare link) | Working |
+| 7.7 | Authenticated blob download (server session, not a bare link) | Working |
 | 7.8 | Export registry | Working |
 
 ---
@@ -199,6 +199,8 @@ provider layer.
 | 9.11 | Cloned media retention-bound and destroyed on consent revocation | Working |
 | 9.12 | Media served by single-use token, never a predictable path | Working |
 | 9.13 | Simulator pages excluded from search indexing | Working |
+| 9.14 | Admin operator lifecycle: named accounts, roles, deactivation, password rotation | Working |
+| 9.15 | Password reset revokes every active session for the affected operator | Working |
 
 ---
 
@@ -215,7 +217,10 @@ provider layer.
 | 10.7 | `scripts/demo_seed.py` — one-command five-channel demo | Working |
 | 10.8 | `scripts/verify_channels.py` — end-to-end capability check | Working |
 | 10.9 | `scripts/capture_screenshots.py` — report screenshots via headless Chrome | Working |
-| 10.10 | 32 automated backend tests | Working |
+| 10.10 | 70 automated backend tests with branch-aware coverage | Working |
+| 10.11 | Production Compose stack with Caddy-managed HTTPS and private data network | Working |
+| 10.12 | Revocable JWT sessions and Redis-backed production rate limits | Working |
+| 10.13 | CI, dependency audits, lint, type checks and container builds | Working |
 
 ---
 
@@ -231,9 +236,10 @@ Optional realism upgrades, none required:
 
 | Capability | Service | Without it |
 |---|---|---|
-| Higher-realism copy | OpenAI / Gemini API key | Built-in generator produces all five channels |
+| Higher-realism copy | Together AI (`openai/gpt-oss-20b`) | Built-in generator produces all five channels |
 | Real outbound calls | Telephony provider | In-browser voice simulator (the recommended path) |
 | Real email delivery | Any SMTP account (free) | Sandbox preview |
 
-**Voice and deepfake need no paid service at all** — they are rendered locally in the
-target's browser by design, which is both cheaper and safer than a voice-cloning API.
+**Voice and deepfake simulations need no paid service** when the browser speech/avatar
+fallback is acceptable. Real cloned voice and talking-head video require the optional paid
+ElevenLabs and D-ID providers.

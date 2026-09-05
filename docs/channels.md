@@ -9,7 +9,7 @@ the payload each adapter builds and whether anything leaves the platform.
 |---|---|---|---|
 | Email | SMTP send to an allowlisted mailbox | `/training/<token>` | Any SMTP account |
 | SMS | REST send to an allowlisted number | `/training/<token>` | Paid SMS gateway |
-| QR | none — a poster is rendered for print | `/qr/<token>` | none |
+| QR | SMTP email with a CID-embedded QR image | `/qr/<token>` | email recipient allowlist |
 | Voice (vishing) | none — runs in the browser; real cloned voice if configured | `/call/<token>` | ElevenLabs (optional) |
 | Deepfake | none — runs in the browser; real cloned voice+video if configured | `/impersonation/<token>` | ElevenLabs + D-ID (optional) |
 
@@ -82,6 +82,11 @@ red-flag debrief are assembled deterministically in `app/services/channel_conten
 This keeps a simulation safe and consistent regardless of which provider is configured, and
 means the platform works fully with no LLM configured at all (the built-in rule-based
 generator produces every channel, including the branching scripts).
+
+The configured external provider is Together AI using `openai/gpt-oss-20b`. Requests contain
+only placeholders (`{{first_name}}`, `{{company_name}}`, `{{department}}`, `{{role_title}}`)
+and non-identifying scenario controls. Context profiles and employee behavior/training history
+are deliberately omitted. The validated response is personalized locally in the backend.
 
 ## Impersonation governance
 

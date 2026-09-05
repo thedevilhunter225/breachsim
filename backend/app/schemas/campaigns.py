@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
-import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,6 +22,8 @@ class CampaignCreate(BaseModel):
     sandbox_mode: bool = True
     learning_objective: str = "Recognize social engineering patterns."
     target_filters: dict[str, Any] = Field(default_factory=dict)
+    landing_domain_id: uuid.UUID | None = None
+    email_connection_id: uuid.UUID | None = None
 
 
 class CampaignUpdate(BaseModel):
@@ -33,6 +35,8 @@ class CampaignUpdate(BaseModel):
     sandbox_mode: bool | None = None
     learning_objective: str | None = None
     target_filters: dict[str, Any] | None = None
+    landing_domain_id: uuid.UUID | None = None
+    email_connection_id: uuid.UUID | None = None
 
 
 class CampaignRead(BaseModel):
@@ -52,6 +56,8 @@ class CampaignRead(BaseModel):
     target_filters: dict[str, Any]
     target_count: int = 0
     scenario_count: int = 0
+    landing_domain_id: uuid.UUID | None = None
+    email_connection_id: uuid.UUID | None = None
 
 
 class DeliveryAttemptRead(BaseModel):
@@ -65,3 +71,8 @@ class DeliveryAttemptRead(BaseModel):
     sandbox_mode: bool
     preview_payload: dict[str, Any]
     delivered_at: datetime | None
+    campaign_run_id: uuid.UUID | None = None
+    provider_message_id: str | None = None
+    retry_count: int = 0
+    next_attempt_at: datetime | None = None
+    last_error_code: str | None = None

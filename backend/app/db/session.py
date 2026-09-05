@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import settings
+from app.core.config import is_production_environment, settings
 from app.db.base import Base
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, future=True, connect_args=connect_args)
+engine_options = {"future": True, "connect_args": connect_args, "pool_pre_ping": True}
+if not settings.database_url.startswith("sqlite"):
+    engine_options.update({"pool_size": 10, "max_overflow": 20, "pool_recycle": 1800})
+engine = create_engine(settings.database_url, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
@@ -113,6 +116,13 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
+    if is_production_environment(settings.environment):
+        # Production schema changes are only applied by Alembic. Creating tables from ORM
+        # metadata at process startup can hide a missed migration and race across workers.
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return
+
     from app.models import entities  # noqa: F401
     from app.services.seed import seed_database
 

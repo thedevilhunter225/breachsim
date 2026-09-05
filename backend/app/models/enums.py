@@ -4,10 +4,74 @@ from enum import StrEnum
 
 
 class UserRole(StrEnum):
+    PLATFORM_OPERATOR = "platform_operator"
     ADMIN = "admin"
     CAMPAIGN_MANAGER = "campaign_manager"
     AUDITOR = "auditor"
+    RISK_IDENTITY_VIEWER = "risk_identity_viewer"
     EMPLOYEE = "employee"
+
+
+class ReportingIdentityMode(StrEnum):
+    PSEUDONYMOUS = "pseudonymous"
+    NAMED = "named"
+
+
+class DomainPurpose(StrEnum):
+    LANDING = "landing"
+    RECIPIENT = "recipient"
+    SENDER = "sender"
+
+
+class DomainKind(StrEnum):
+    PLATFORM = "platform"
+    CUSTOM = "custom"
+
+
+class VerificationStatus(StrEnum):
+    PENDING = "pending"
+    VERIFIED = "verified"
+    ACTIVE = "active"
+    FAILED = "failed"
+    DEACTIVATED = "deactivated"
+
+
+class EmailProviderKind(StrEnum):
+    MICROSOFT_GRAPH = "microsoft_graph"
+    GOOGLE_WORKSPACE = "google_workspace"
+    SMTP_LAB = "smtp_lab"
+
+
+class ConnectionStatus(StrEnum):
+    PENDING = "pending"
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    REVOKED = "revoked"
+
+
+class CampaignRunStatus(StrEnum):
+    SCHEDULED = "scheduled"
+    QUEUED = "queued"
+    RUNNING = "running"
+    PAUSED = "paused"
+    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class OutboxStatus(StrEnum):
+    PENDING = "pending"
+    PUBLISHED = "published"
+    FAILED = "failed"
+
+
+class SuppressionReason(StrEnum):
+    HARD_BOUNCE = "hard_bounce"
+    OPT_OUT = "opt_out"
+    INACTIVE = "inactive"
+    INVALID_DOMAIN = "invalid_domain"
+    ADMINISTRATIVE = "administrative"
 
 
 class ConsentStatus(StrEnum):
@@ -52,6 +116,7 @@ class CampaignStatus(StrEnum):
     SCHEDULED = "scheduled"
     ACTIVE = "active"
     PAUSED = "paused"
+    CANCELLED = "cancelled"
     COMPLETED = "completed"
 
 
@@ -63,12 +128,19 @@ class CampaignType(StrEnum):
 
 class DeliveryStatus(StrEnum):
     SANDBOXED = "sandboxed"
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    ACCEPTED = "accepted"
     DELIVERED = "delivered"
     BOUNCED = "bounced"
+    SUPPRESSED = "suppressed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
 
 
 class EventType(StrEnum):
+    PROVIDER_ACCEPTED = "provider_accepted"
     DELIVERED = "delivered"
     BOUNCED = "bounced"
     OPENED_EMAIL = "opened_email"

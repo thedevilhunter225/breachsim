@@ -11,7 +11,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
 os.environ["FRONTEND_BASE_URL"] = "http://localhost:3000"
 os.environ["SEED_DEMO_CONTENT"] = "true"
 os.environ["SECRET_KEY"] = "breachsim-test-signing-key-32-bytes-minimum"
-os.environ["LLM_PROVIDER"] = "rule_based"
+os.environ["AI_PROVIDER"] = "rule_based"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,7 +26,11 @@ def client() -> TestClient:
 
 
 def login(client: TestClient, email: str, password: str) -> dict[str, str]:
-    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+        headers={"X-BreachSim-API-Client": "bearer"},
+    )
     assert response.status_code == 200, response.text
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}

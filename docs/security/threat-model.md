@@ -8,7 +8,9 @@
 ## Leaked tokens
 
 - Threat: tracking or session tokens are replayed.
-- Mitigations: signed JWT access tokens with short expiry, distinct landing tokens, token rotation, token hashing in logs where practical, HTTPS/TLS assumption.
+- Mitigations: revocable server sessions in `Secure`, `HttpOnly`, `SameSite=Strict` cookies,
+  CSRF validation, idle/absolute expiry and rotation; distinct expiring landing tokens; token
+  hashing in logs where practical; HTTPS/TLS enforced in production.
 
 ## Stored data exposure
 

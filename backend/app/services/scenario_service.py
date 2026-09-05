@@ -5,12 +5,17 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.models.entities import Employee, Organization, Scenario, ScenarioVersion
 from app.models.enums import ScenarioStatus
 from app.schemas.scenarios import ScenarioEditRequest, ScenarioGenerateRequest
 from app.services.audit import audit_log
-from app.services.llm import LLMProvider, LLMProviderError, RuleBasedLLMProvider, ScenarioPrompt, get_default_llm_provider
+from app.services.llm import (
+    LLMProvider,
+    LLMProviderError,
+    RuleBasedLLMProvider,
+    ScenarioPrompt,
+    get_default_llm_provider,
+)
 from app.services.media_generation import generate_media_for_version
 from app.services.personas import resolve_persona_for_scenario, to_context
 from app.services.policy_engine import get_or_create_policy, validate_generated_content, validate_generation_request
@@ -42,6 +47,7 @@ def generate_scenario(db: Session, *, request: ScenarioGenerateRequest, actor, l
         employee_name=employee.full_name,
         role_title=employee.role_title,
         department_name=employee.department.name if employee.department else "General",
+        company_name=organization.name if organization else "Organization",
         channel=request.channel,
         theme=request.theme,
         difficulty_level=request.difficulty_level,
@@ -135,7 +141,7 @@ def generate_scenario(db: Session, *, request: ScenarioGenerateRequest, actor, l
             "channel": request.channel.value,
             "prompt_instructions": request.prompt_instructions,
             "provider": result["rationale_metadata"].get("provider", "rule-based"),
-            "model": result["rationale_metadata"].get("model", settings.gemini_model if settings.gemini_api_key else "fallback"),
+            "model": result["rationale_metadata"].get("model", "fallback"),
             "persona_id": str(persona.id) if persona else None,
             "persona_reference": persona.reference_code if persona else None,
         },

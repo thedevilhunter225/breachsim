@@ -27,3 +27,15 @@ def export_report_job(report_type: str, organization_id: str, user_id: str, camp
       return report.path
     finally:
       db.close()
+
+
+def process_delivery_batch_job(attempt_ids: list[str]) -> int:
+    from app.services.campaign_runs import process_delivery_batch
+
+    return process_delivery_batch(attempt_ids)
+
+
+def dispatch_outbox_job(limit: int = 100) -> int:
+    from app.services.campaign_runs import dispatch_outbox
+
+    return dispatch_outbox(limit=limit)

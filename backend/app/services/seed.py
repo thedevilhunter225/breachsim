@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.crypto import pseudonymous_id
+from app.core.crypto import blind_index, pseudonymous_id
 from app.core.security import hash_password
 from app.models.entities import (
     Campaign,
@@ -11,8 +11,8 @@ from app.models.entities import (
     CampaignTarget,
     ConsentRecord,
     ContextProfile,
-    Department,
     DeliveryAttempt,
+    Department,
     Employee,
     EventLog,
     FailureReason,
@@ -275,6 +275,10 @@ def ensure_demo_directory_data(db: Session, organization: Organization, users: d
             employee_id=f"EMP-{1000 + index}",
             full_name=f"{first} {last}",
             email=f"{first.lower()}.{last.lower()}{index}{DEMO_EMPLOYEE_EMAIL_SUFFIX}",
+            email_blind_index=blind_index(
+                f"{first.lower()}.{last.lower()}{index}{DEMO_EMPLOYEE_EMAIL_SUFFIX}",
+                namespace="employee-email",
+            ),
             phone=f"+92300123{index:04d}",
             role_title=role_title,
             approved_context_summary=f"Approved workflow notes for {department_name.lower()} approvals and internal communications.",

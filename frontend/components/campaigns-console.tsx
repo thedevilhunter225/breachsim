@@ -5,7 +5,6 @@ import {
   Activity,
   CheckCircle2,
   Copy,
-  Download,
   ExternalLink,
   Loader2,
   Mail,
@@ -28,24 +27,30 @@ import { useSession } from "@/components/session-provider";
 import {
   approveCampaign,
   createCampaign,
+  createCampaignRun,
   deleteCampaign,
-  deliverCampaign,
   getCampaigns,
   getDeliveryAttempts,
+  getCampaignRuns,
+  getEnterpriseEmailConnections,
   getEmployees,
+  getOrganizationDomains,
   getScenarios,
   launchCampaignSandbox,
   requestCampaignApproval,
   type Campaign,
+  type CampaignRun,
   type DeliveryAttempt,
   type Employee,
   type Scenario,
+  type EnterpriseEmailConnection,
+  type OrganizationDomain,
 } from "@/lib/client-api";
 
 const CHANNELS: Array<{ value: string; label: string; icon: LucideIcon; deliverLabel: string }> = [
   { value: "email", label: "Email", icon: Mail, deliverLabel: "Send live email" },
   { value: "sms", label: "SMS", icon: MessageSquare, deliverLabel: "Send live SMS" },
-  { value: "qr", label: "QR", icon: QrCode, deliverLabel: "Publish QR session" },
+  { value: "qr", label: "QR", icon: QrCode, deliverLabel: "Send QR email" },
   { value: "vishing", label: "Voice", icon: PhoneCall, deliverLabel: "Activate call session" },
   { value: "deepfake", label: "Deepfake", icon: Video, deliverLabel: "Activate media session" },
 ];
@@ -73,6 +78,9 @@ export function CampaignsConsole() {
   const [attempts, setAttempts] = useState<DeliveryAttempt[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [domains, setDomains] = useState<OrganizationDomain[]>([]);
+  const [connections, setConnections] = useState<EnterpriseEmailConnection[]>([]);
+  const [runs, setRuns] = useState<CampaignRun[]>([]);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
@@ -84,25 +92,40 @@ export function CampaignsConsole() {
     requires_second_approval: true,
     sandbox_mode: true,
     learning_objective: "Recognize social engineering patterns.",
+    landing_domain_id: "",
+    email_connection_id: "",
   });
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [campaignRows, attemptRows, employeeRows, scenarioRows] = await Promise.all([
+    const [campaignRows, attemptRows, employeeRows, scenarioRows, domainRows, connectionRows] = await Promise.all([
       getCampaigns(session.access_token),
       getDeliveryAttempts(session.access_token),
       getEmployees(session.access_token),
       getScenarios(session.access_token),
+      getOrganizationDomains(session.access_token),
+      getEnterpriseEmailConnections(session.access_token),
     ]);
+    const runRows = (
+      await Promise.all(campaignRows.map((campaign) => getCampaignRuns(session.access_token, campaign.id).catch(() => [])))
+    ).flat();
     const approved = scenarioRows.filter((scenario) => scenario.status === "approved");
     setCampaigns(campaignRows);
     setAttempts(attemptRows);
     setEmployees(employeeRows);
     setScenarios(approved);
+    setDomains(domainRows);
+    setConnections(connectionRows);
+    setRuns(runRows);
     setForm((current) => {
       if (current.scenario_id) return current;
       const match = approved.find((scenario) => scenario.channel === current.channel) ?? approved[0];
-      return { ...current, scenario_id: match?.id ?? "" };
+      return {
+        ...current,
+        scenario_id: match?.id ?? "",
+        landing_domain_id: current.landing_domain_id || domainRows.find((row) => row.purpose === "landing" && row.status === "active" && row.is_primary)?.id || domainRows.find((row) => row.purpose === "landing" && row.status === "active")?.id || "",
+        email_connection_id: current.email_connection_id || connectionRows.find((row) => row.status === "healthy")?.id || "",
+      };
     });
   }, [session]);
 
@@ -117,7 +140,7 @@ export function CampaignsConsole() {
 
   function updateChannel(channel: string) {
     const next = scenarios.find((scenario) => scenario.channel === channel)?.id ?? "";
-    setForm({ ...form, channel, scenario_id: next });
+    setForm({ ...form, channel, scenario_id: next, sandbox_mode: channel === "email" || channel === "qr" ? form.sandbox_mode : true });
   }
 
   async function runAction(key: string, action: () => Promise<unknown>, success: string) {
@@ -151,6 +174,8 @@ export function CampaignsConsole() {
           sandbox_mode: form.sandbox_mode,
           learning_objective: form.learning_objective,
           target_filters: { created_from_ui: true },
+          landing_domain_id: form.landing_domain_id || null,
+          email_connection_id: form.email_connection_id || null,
         }),
       "Campaign created.",
     );
@@ -204,7 +229,13 @@ export function CampaignsConsole() {
     setNotice({ tone: "ok", text: "Copied to clipboard." });
   }
 
-  const canCreate = Boolean(form.name.trim() && form.scenario_id && selectedEmployees.length);
+  const liveReady = Boolean(form.landing_domain_id && form.email_connection_id);
+  const canCreate = Boolean(
+    form.name.trim() &&
+      form.scenario_id &&
+      selectedEmployees.length &&
+      (form.sandbox_mode || ((form.channel === "email" || form.channel === "qr") && liveReady)),
+  );
 
   return (
     <div className="space-y-4">
@@ -240,7 +271,7 @@ export function CampaignsConsole() {
 
       <div className="grid gap-4 xl:grid-cols-[400px_minmax(0,1fr)]">
         {/* Composer */}
-        <section className="card self-start p-5 xl:sticky xl:top-[86px]">
+        <section className="card min-w-0 self-start overflow-hidden p-5">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/10 text-brand-500">
               <Send size={18} />
@@ -248,6 +279,42 @@ export function CampaignsConsole() {
             <div>
               <div className="section-title">Composer</div>
               <h2 className="display-font mt-0.5 text-lg font-bold text-ink">Create campaign</h2>
+            </div>
+
+            <div className="rounded-xl border border-line bg-surface-muted p-4">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={!form.sandbox_mode}
+                  disabled={form.channel !== "email" && form.channel !== "qr"}
+                  onChange={(event) => setForm({ ...form, sandbox_mode: !event.target.checked })}
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-ink">Live enterprise delivery</span>
+                  <span className="mt-1 block text-xs leading-5 text-muted">
+                    Available only for approved Email and QR campaigns. Other channels remain sandbox-only.
+                  </span>
+                </span>
+              </label>
+              {!form.sandbox_mode ? (
+                <div className="mt-4 grid gap-3">
+                  <div>
+                    <label className="field-label" htmlFor="campaign-landing-domain">Landing domain</label>
+                    <select id="campaign-landing-domain" className="field" value={form.landing_domain_id} onChange={(event) => setForm({ ...form, landing_domain_id: event.target.value })}>
+                      <option value="">Select verified landing domain</option>
+                      {domains.filter((row) => row.purpose === "landing" && row.status === "active").map((row) => <option key={row.id} value={row.id}>{row.hostname}{row.is_primary ? " · primary" : ""}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="campaign-email-connection">Authorized sender</label>
+                    <select id="campaign-email-connection" className="field" value={form.email_connection_id} onChange={(event) => setForm({ ...form, email_connection_id: event.target.value })}>
+                      <option value="">Select healthy email connection</option>
+                      {connections.filter((row) => row.status === "healthy").map((row) => <option key={row.id} value={row.id}>{row.sender_name} · {row.sender_email}</option>)}
+                    </select>
+                  </div>
+                  {!liveReady ? <p className="text-xs leading-5 text-caution">Complete domain and customer mail authorization in Settings → Launch setup.</p> : null}
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -412,7 +479,7 @@ export function CampaignsConsole() {
         </section>
 
         {/* Workflow */}
-        <section className="space-y-4">
+        <section className="min-w-0 space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="section-title">Launch queue</div>
@@ -434,9 +501,9 @@ export function CampaignsConsole() {
               const meta = channelMeta(campaign.channel);
               const ChannelIcon = meta.icon;
               const attempt = attempts.find((row) => row.campaign_id === campaign.id);
-              const payload = attempt?.preview_payload ?? {};
+              const latestRun = runs.filter((row) => row.campaign_id === campaign.id).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
               const launchable = campaign.status === "approved" || campaign.status === "scheduled";
-              const deliverable = launchable || campaign.status === "active";
+              const deliverable = !campaign.sandbox_mode && (campaign.channel === "email" || campaign.channel === "qr") && launchable;
 
               return (
                 <article key={campaign.id} className="card overflow-hidden">
@@ -475,6 +542,19 @@ export function CampaignsConsole() {
                   {attempt ? (
                     <div className="border-b border-line bg-surface-muted p-5">
                       <AttemptPreview attempt={attempt} onCopy={copyValue} />
+                    </div>
+                  ) : null}
+
+                  {latestRun ? (
+                    <div className="grid gap-px border-b border-line bg-line sm:grid-cols-4 lg:grid-cols-8">
+                      <RunMetric label="State" value={latestRun.status} />
+                      <RunMetric label="Queued" value={latestRun.queued_count} />
+                      <RunMetric label="Processing" value={latestRun.processing_count} />
+                      <RunMetric label="Accepted" value={latestRun.accepted_count} tone="text-signal" />
+                      <RunMetric label="Bounced" value={latestRun.bounced_count} />
+                      <RunMetric label="Suppressed" value={latestRun.suppressed_count} />
+                      <RunMetric label="Failed" value={latestRun.failed_count} tone="text-breach" />
+                      <RunMetric label="Unknown" value={latestRun.unknown_count} tone="text-caution" />
                     </div>
                   ) : null}
 
@@ -539,8 +619,8 @@ export function CampaignsConsole() {
                         onClick={() =>
                           void runAction(
                             campaign.id,
-                            () => deliverCampaign(session!.access_token, campaign.id),
-                            `${meta.label} campaign delivered.`,
+                            () => createCampaignRun(session!.access_token, campaign.id, campaign.schedule_at),
+                            `${meta.label} campaign queued for provider submission.`,
                           )
                         }
                       >
@@ -551,17 +631,6 @@ export function CampaignsConsole() {
                         )}
                         {meta.deliverLabel}
                       </button>
-                    ) : null}
-
-                    {payload.qr_image_data_url ? (
-                      <a
-                        href={payload.qr_image_data_url}
-                        download="breachsim-qr.png"
-                        className="btn-secondary btn-sm"
-                      >
-                        <Download size={13} />
-                        Download QR
-                      </a>
                     ) : null}
 
                     <button
@@ -777,6 +846,15 @@ function Note({ text }: { text: string }) {
     <p className="rounded-lg border border-brand-500/20 bg-brand-500/6 px-3 py-2 text-[0.78rem] leading-relaxed text-muted">
       {text}
     </p>
+  );
+}
+
+function RunMetric({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
+  return (
+    <div className="bg-surface px-4 py-3">
+      <div className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-subtle">{label}</div>
+      <div className={clsx("numeric mt-1 text-sm font-bold capitalize text-ink", tone)}>{String(value).replace(/_/g, " ")}</div>
+    </div>
   );
 }
 

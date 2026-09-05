@@ -4,37 +4,49 @@ import clsx from "clsx";
 import {
   Building2,
   Info,
+  KeyRound,
   Loader2,
   Mail,
   MessageSquare,
   Save,
   ShieldAlert,
   ShieldCheck,
+  UserPlus,
+  UsersRound,
   Video,
+  CloudCog,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useSession } from "@/components/session-provider";
+import { EnterpriseSetupConsole } from "@/components/enterprise-setup-console";
 import {
+  createOperator,
   getCurrentOrg,
   getEmailIntegration,
   getImpersonationSettings,
   getSmsIntegration,
+  getOperators,
+  resetOperatorPassword,
   updateCurrentOrg,
   updateEmailIntegration,
   updateImpersonationSettings,
   updateSmsIntegration,
+  updateOperator,
   type EmailIntegration,
   type ImpersonationSettings,
   type OrganizationProfile,
+  type OperatorAccount,
   type SmsIntegration,
 } from "@/lib/client-api";
 
-type TabKey = "organization" | "email" | "sms" | "impersonation";
+type TabKey = "launch" | "organization" | "operators" | "email" | "sms" | "impersonation";
 
 const TABS: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
+  { key: "launch", label: "Launch setup", icon: CloudCog },
   { key: "organization", label: "Organization", icon: Building2 },
+  { key: "operators", label: "Operators", icon: UsersRound },
   { key: "email", label: "Email", icon: Mail },
   { key: "sms", label: "SMS", icon: MessageSquare },
   { key: "impersonation", label: "Impersonation", icon: Video },
@@ -71,34 +83,52 @@ const defaultOrg: OrganizationProfile = {
   timezone: "Asia/Karachi",
   retention_days: 365,
   privacy_notice: "Training and security awareness platform.",
+  reporting_identity_mode: "pseudonymous",
 };
 
 export function SettingsConsole() {
   const { session } = useSession();
-  const [tab, setTab] = useState<TabKey>("organization");
+  const [tab, setTab] = useState<TabKey>("launch");
   const [org, setOrg] = useState(defaultOrg);
   const [email, setEmail] = useState(defaultEmail);
   const [sms, setSms] = useState(defaultSms);
   const [impersonation, setImpersonation] = useState<ImpersonationSettings | null>(null);
+  const [operators, setOperators] = useState<OperatorAccount[]>([]);
+  const [operatorForm, setOperatorForm] = useState({
+    full_name: "",
+    email: "",
+    password: "",
+    role: "campaign_manager",
+  });
+  const [resetPasswords, setResetPasswords] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!session) return;
-    const [orgValue, emailValue, smsValue, impersonationValue] = await Promise.all([
+    const isAdmin = session.user.roles.includes("admin");
+    const [orgValue, emailValue, smsValue, impersonationValue, operatorValues] = await Promise.all([
       getCurrentOrg(session.access_token),
       getEmailIntegration(session.access_token),
       getSmsIntegration(session.access_token).catch(() => null),
       getImpersonationSettings(session.access_token).catch(() => null),
+      isAdmin ? getOperators(session.access_token) : Promise.resolve([]),
     ]);
     setOrg(orgValue);
     setEmail({ ...defaultEmail, ...emailValue, smtp_password: "" });
     if (smsValue) setSms({ ...defaultSms, ...smsValue, sms_auth_token: "" });
     setImpersonation(impersonationValue);
+    setOperators(operatorValues);
   }, [session]);
 
   useEffect(() => {
-    void load();
+    let active = true;
+    void load().catch((error) => {
+      if (active) setNotice({ tone: "error", text: readError(error) });
+    });
+    return () => {
+      active = false;
+    };
   }, [load]);
 
   async function save(key: string, action: () => Promise<unknown>, success: string) {
@@ -118,13 +148,13 @@ export function SettingsConsole() {
     <div className="space-y-4">
       <section className="card p-5 md:p-6">
         <div className="section-title">Workspace administration</div>
-        <h1 className="display-font mt-1.5 text-2xl font-bold text-ink">Organization and integrations</h1>
+        <h1 className="display-font mt-1.5 text-2xl font-bold text-ink">Organization, operators and integrations</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
           Workspace identity, data retention, and the delivery providers each simulation channel uses.
         </p>
 
         <nav className="mt-5 flex flex-wrap gap-1.5">
-          {TABS.map((entry) => {
+          {TABS.filter((entry) => entry.key !== "operators" || session?.user.roles.includes("admin")).map((entry) => {
             const Icon = entry.icon;
             const active = tab === entry.key;
             return (
@@ -159,6 +189,8 @@ export function SettingsConsole() {
           {notice.text}
         </div>
       ) : null}
+
+      {tab === "launch" ? <EnterpriseSetupConsole /> : null}
 
       {tab === "organization" ? (
         <section className="card p-5 md:p-6">
@@ -203,6 +235,14 @@ export function SettingsConsole() {
               <span className="field-label">Workspace slug</span>
               <div className="numeric field bg-surface-muted font-mono text-muted">{org.slug || "generated"}</div>
             </div>
+            <div>
+              <label className="field-label" htmlFor="org-reporting-identity">Reporting identity</label>
+              <select id="org-reporting-identity" className="field" value={org.reporting_identity_mode} onChange={(event) => setOrg({ ...org, reporting_identity_mode: event.target.value as OrganizationProfile["reporting_identity_mode"] })}>
+                <option value="pseudonymous">Pseudonymous (recommended)</option>
+                <option value="named">Named · restricted role required</option>
+              </select>
+              <p className="field-hint">Named exports still require the Risk Identity Viewer role.</p>
+            </div>
             <div className="md:col-span-2">
               <label className="field-label" htmlFor="org-privacy">
                 Privacy notice
@@ -229,6 +269,7 @@ export function SettingsConsole() {
                     timezone: org.timezone,
                     retention_days: org.retention_days,
                     privacy_notice: org.privacy_notice,
+                    reporting_identity_mode: org.reporting_identity_mode,
                   });
                   setOrg(next);
                 },
@@ -242,11 +283,152 @@ export function SettingsConsole() {
         </section>
       ) : null}
 
+      {tab === "operators" && session?.user.roles.includes("admin") ? (
+        <section className="card p-5 md:p-6">
+          <SectionHeader
+            title="Operator accounts"
+            subtitle="Create named accounts, assign least-privilege roles, revoke access, and rotate passwords."
+          />
+
+          <div className="mt-5 rounded-xl border border-line bg-surface-muted p-4">
+            <div className="flex items-center gap-2 text-sm font-bold text-ink">
+              <UserPlus size={16} /> Add operator
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <TextField
+                id="operator-name"
+                label="Full name"
+                value={operatorForm.full_name}
+                onChange={(value) => setOperatorForm({ ...operatorForm, full_name: value })}
+              />
+              <TextField
+                id="operator-email"
+                label="Email"
+                value={operatorForm.email}
+                onChange={(value) => setOperatorForm({ ...operatorForm, email: value })}
+              />
+              <div>
+                <label className="field-label" htmlFor="operator-password">Temporary password</label>
+                <input
+                  id="operator-password"
+                  type="password"
+                  className="field"
+                  value={operatorForm.password}
+                  onChange={(event) => setOperatorForm({ ...operatorForm, password: event.target.value })}
+                />
+                <p className="field-hint">14+ characters with uppercase, lowercase, number and symbol.</p>
+              </div>
+              <div>
+                <label className="field-label" htmlFor="operator-role">Role</label>
+                <select
+                  id="operator-role"
+                  className="field"
+                  value={operatorForm.role}
+                  onChange={(event) => setOperatorForm({ ...operatorForm, role: event.target.value })}
+                >
+                  <option value="campaign_manager">Campaign manager</option>
+                  <option value="auditor">Auditor</option>
+                  <option value="risk_identity_viewer">Named-report identity viewer</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-primary mt-4"
+              disabled={busy === "operator-create"}
+              onClick={() =>
+                void save(
+                  "operator-create",
+                  async () => {
+                    await createOperator(session.access_token, {
+                      full_name: operatorForm.full_name,
+                      email: operatorForm.email,
+                      password: operatorForm.password,
+                      roles: [operatorForm.role],
+                    });
+                    setOperators(await getOperators(session.access_token));
+                    setOperatorForm({ full_name: "", email: "", password: "", role: "campaign_manager" });
+                  },
+                  "Operator account created.",
+                )
+              }
+            >
+              {busy === "operator-create" ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
+              Create operator
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {operators.map((operator) => (
+              <div key={operator.id} className="rounded-xl border border-line bg-surface p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-bold text-ink">{operator.full_name}</div>
+                    <div className="mt-0.5 text-xs text-muted">{operator.email}</div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {operator.roles.map((role) => <span key={role} className="badge badge-neutral">{role.replaceAll("_", " ")}</span>)}
+                      <span className={clsx("badge", operator.is_active ? "badge-success" : "badge-warn")}>
+                        {operator.is_active ? "active" : "inactive"}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={busy === `operator-status-${operator.id}` || operator.id === session.user.id}
+                    onClick={() =>
+                      void save(
+                        `operator-status-${operator.id}`,
+                        async () => {
+                          await updateOperator(session.access_token, operator.id, { is_active: !operator.is_active });
+                          setOperators(await getOperators(session.access_token));
+                        },
+                        operator.is_active ? "Operator deactivated." : "Operator activated.",
+                      )
+                    }
+                  >
+                    {operator.is_active ? "Deactivate" : "Activate"}
+                  </button>
+                </div>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="password"
+                    className="field flex-1"
+                    aria-label={`New password for ${operator.full_name}`}
+                    placeholder="New strong password"
+                    value={resetPasswords[operator.id] ?? ""}
+                    onChange={(event) => setResetPasswords({ ...resetPasswords, [operator.id]: event.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={busy === `operator-reset-${operator.id}` || !(resetPasswords[operator.id] ?? "")}
+                    onClick={() =>
+                      void save(
+                        `operator-reset-${operator.id}`,
+                        async () => {
+                          await resetOperatorPassword(session.access_token, operator.id, resetPasswords[operator.id] ?? "");
+                          setResetPasswords({ ...resetPasswords, [operator.id]: "" });
+                        },
+                        "Password reset and existing sessions revoked.",
+                      )
+                    }
+                  >
+                    <KeyRound size={15} /> Reset password
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {tab === "email" ? (
         <section className="card p-5 md:p-6">
           <SectionHeader
-            title="Email delivery (SMTP)"
-            subtitle="Live email delivery is restricted to addresses on the allowlist."
+            title="SMTP demo adapter"
+            subtitle="Local/demo use only. Enterprise campaigns use Microsoft Graph or Google Workspace from Launch setup."
           />
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">

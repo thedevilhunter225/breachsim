@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import uuid
 from typing import Annotated
 
@@ -12,11 +13,18 @@ from app.db.session import get_db
 from app.models.enums import MediaAssetStatus, UserRole
 from app.services import media_store
 from app.services.media import video_provider_status, voice_provider_status
-from app.services.media_enrollment import enroll_face_image, enroll_voice_sample
+from app.services.media_enrollment import MAX_UPLOAD_BYTES, enroll_face_image, enroll_voice_sample
 from app.services.media_generation import finalize_pending_video
 from app.services.personas import get_persona
 
 router = APIRouter()
+
+
+async def _read_bounded_upload(file: UploadFile) -> bytes:
+    try:
+        return await file.read(MAX_UPLOAD_BYTES + 1)
+    finally:
+        await file.close()
 
 
 @router.get("/media/providers")
@@ -41,7 +49,7 @@ async def upload_voice_sample(
     user=Depends(require_roles(UserRole.ADMIN)),
 ):
     persona = get_persona(db, user.organization_id, persona_id)
-    content = await file.read()
+    content = await _read_bounded_upload(file)
     asset = enroll_voice_sample(
         db,
         persona=persona,
@@ -65,7 +73,7 @@ async def upload_face_image(
     user=Depends(require_roles(UserRole.ADMIN)),
 ):
     persona = get_persona(db, user.organization_id, persona_id)
-    content = await file.read()
+    content = await _read_bounded_upload(file)
     asset = enroll_face_image(
         db,
         persona=persona,
@@ -101,6 +109,11 @@ def serve_media(token: str, db: Annotated[Session, Depends(get_db)]):
         content = media_store.read_bytes(asset)
     except (FileNotFoundError, OSError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media bytes are unavailable") from exc
+
+    # Rotate after a successful read so a leaked media URL cannot be replayed. The
+    # simulation endpoint can issue the current token again to an authorized participant.
+    asset.access_token = secrets.token_urlsafe(24)
+    db.commit()
 
     return Response(
         content=content,

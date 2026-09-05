@@ -10,7 +10,7 @@ Channel          Outbound action                        Employee entry point
 ===============  =====================================  ==========================
 email            SMTP send to an allowlisted mailbox    ``/training/<token>``
 sms              REST send to an allowlisted number     ``/training/<token>``
-qr               none — a poster is rendered for print  ``/qr/<token>``
+qr               SMTP email with an HTML-rendered QR    ``/qr/<token>``
 vishing          none — the call runs in the browser    ``/call/<token>``
 deepfake         none — the media runs in the browser   ``/impersonation/<token>``
 ===============  =====================================  ==========================
@@ -24,15 +24,16 @@ boundary the organization fully controls.
 from __future__ import annotations
 
 import base64
+import secrets
 from datetime import datetime, timedelta, timezone
+from html import escape
 from io import BytesIO
 
-from fastapi import HTTPException, status
 import qrcode
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.config import settings
-from app.core.crypto import pseudonymous_id
+from app.core.config import is_production_environment, settings
 from app.models.entities import Campaign, DeliveryAttempt, Employee, LandingToken, Organization, Scenario
 from app.models.enums import CampaignStatus, Channel, DeliveryStatus, EventType
 from app.services.audit import audit_log
@@ -43,7 +44,7 @@ from app.services.sms_integration import send_lab_sms
 TOKEN_TTL_DAYS = 30
 
 #: Channels that never send anything outbound — the simulation runs in the browser.
-IN_PLATFORM_CHANNELS = {Channel.QR, Channel.VISHING, Channel.DEEPFAKE}
+SESSION_ONLY_CHANNELS = {Channel.VISHING, Channel.DEEPFAKE}
 
 #: Which frontend route a token resolves to, per channel.
 ENTRY_ROUTE_BY_CHANNEL = {
@@ -68,8 +69,11 @@ def _load_campaign(db: Session, *, campaign_id, actor) -> Campaign:
     )
     if not campaign:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-    if campaign.status not in {CampaignStatus.APPROVED, CampaignStatus.SCHEDULED}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign must be approved before launch")
+    if campaign.status not in {CampaignStatus.APPROVED, CampaignStatus.SCHEDULED, CampaignStatus.ACTIVE}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Campaign must be approved, scheduled, or active before launch",
+        )
     if not campaign.targets or not campaign.scenario_links:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign requires targets and scenarios")
     return campaign
@@ -81,12 +85,58 @@ def _scenario_for_campaign(db: Session, campaign: Campaign) -> tuple[Scenario, o
     return scenario, latest_version
 
 
-def _qr_image_data_url(value: str) -> str:
+def _qr_png_bytes(value: str) -> bytes:
     qr_image = qrcode.make(value)
     buffer = BytesIO()
     qr_image.save(buffer, format="PNG")
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return buffer.getvalue()
+
+
+def _qr_image_data_url(value: str) -> str:
+    encoded = base64.b64encode(_qr_png_bytes(value)).decode("ascii")
     return f"data:image/png;base64,{encoded}"
+
+
+def _qr_html_table(value: str, *, module_size: int = 6) -> str:
+    """Render a scannable QR as email-safe HTML without an image MIME part.
+
+    Gmail exposes even correctly related CID images in its attachment tray for
+    some recipients. A compact run-length table keeps every QR module inside
+    the HTML body, so there is nothing for the client to present as a download.
+    The QR library's matrix includes the required four-module quiet zone. Every
+    row deliberately has the same number of cells: email clients calculate one
+    shared column grid for a table, so run-length-compressed rows can distort
+    into barcode-like vertical stripes after Gmail sanitizes the markup.
+    """
+
+    qr_code = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=1,
+        border=4,
+    )
+    qr_code.add_data(value)
+    qr_code.make(fit=True)
+    matrix = qr_code.get_matrix()
+    pixel_size = len(matrix) * module_size
+
+    rows = [
+        f'<tr height="{module_size}">'
+        + "".join(
+            f'<td width="{module_size}" height="{module_size}" '
+            f'bgcolor="{"#000000" if dark else "#ffffff"}"></td>'
+            for dark in row
+        )
+        + "</tr>"
+        for row in matrix
+    ]
+
+    return (
+        f'<table role="img" aria-label="QR code" cellspacing="0" cellpadding="0" border="0" '
+        f'width="{pixel_size}" style="width:{pixel_size}px;height:{pixel_size}px;'
+        'table-layout:fixed;border-collapse:collapse;background:#ffffff;">'
+        f'{"".join(rows)}</table>'
+    )
 
 
 def entry_url(channel: Channel, token_value: str) -> str:
@@ -118,7 +168,7 @@ def _issue_attempt_and_token(
         delivery_attempt_id=attempt.id,
         employee_id=employee_id,
         campaign_id=campaign.id,
-        token=pseudonymous_id(str(campaign.id), str(employee_id), str(attempt.id))[:32],
+        token=secrets.token_urlsafe(32),
         landing_type=campaign.channel.value,
         expires_at=datetime.now(timezone.utc) + timedelta(days=TOKEN_TTL_DAYS),
     )
@@ -176,12 +226,16 @@ def _qr_payload(latest_version, scan_url: str) -> dict:
         "scan_url": scan_url,
         "qr_payload_text": scan_url,
         "qr_image_data_url": _qr_image_data_url(scan_url),
+        "email_subject": latest_version.subject,
+        "email_body": latest_version.body_copy,
+        # Retained for previews created before QR moved from print posters to email delivery.
         "poster_title": latest_version.subject,
         "poster_body": latest_version.body_copy,
-        "placement_context": "Office noticeboard, reception desk, printer area, or meeting-room card",
+        "delivery_format": "inline_email",
+        "placement_context": "Embedded directly in the email body; no attachment or download required",
         "verification_note": (
-            "Admin view: QR scans are logged as awareness events before the employee reaches "
-            "the training result page."
+            "Each recipient receives a unique QR. A scan is recorded as an awareness event "
+            "before the employee reaches the training result page."
         ),
         "expected_events": ["delivered", "scanned_qr", "visited_landing_page", "clicked_report", "submitted_form_boolean"],
         "module": "qr_simulation",
@@ -349,7 +403,7 @@ def deliver_campaign(db: Session, *, campaign_id, actor) -> list[DeliveryAttempt
     dispatch = {
         Channel.EMAIL: _deliver_email_attempt,
         Channel.SMS: _deliver_sms_attempt,
-        Channel.QR: _activate_in_platform_attempt,
+        Channel.QR: _deliver_qr_email_attempt,
         Channel.VISHING: _activate_in_platform_attempt,
         Channel.DEEPFAKE: _activate_in_platform_attempt,
     }
@@ -375,7 +429,7 @@ def deliver_campaign(db: Session, *, campaign_id, actor) -> list[DeliveryAttempt
             campaign=campaign,
             scenario=scenario,
             employee_id=target.employee_id,
-            sandbox_mode=campaign.channel in IN_PLATFORM_CHANNELS or not outbound_available,
+            sandbox_mode=campaign.channel in SESSION_ONLY_CHANNELS or not outbound_available,
         )
         attempt.preview_payload = build_attempt_payload(
             campaign=campaign,
@@ -438,9 +492,13 @@ def deliver_campaign(db: Session, *, campaign_id, actor) -> list[DeliveryAttempt
 
 def _outbound_available(channel: Channel, organization: Organization | None) -> bool:
     """True when this channel is configured to actually send something outbound."""
-    if channel in IN_PLATFORM_CHANNELS or organization is None:
+    if channel in SESSION_ONLY_CHANNELS or organization is None:
         return False
-    if channel == Channel.EMAIL:
+    if is_production_environment(settings.environment):
+        # Production delivery is handled only by the durable provider-neutral run
+        # workers. The legacy SMTP/SMS path remains available to local demos.
+        return False
+    if channel in {Channel.EMAIL, Channel.QR}:
         return bool(organization.email_provider_enabled and organization.email_provider_mode == "lab")
     if channel == Channel.SMS:
         return bool(organization.sms_provider_enabled and organization.sms_provider_mode == "lab")
@@ -450,7 +508,7 @@ def _outbound_available(channel: Channel, organization: Organization | None) -> 
 def _recipient_for(channel: Channel, employee: Employee) -> str | None:
     if channel == Channel.SMS:
         return employee.phone
-    if channel in IN_PLATFORM_CHANNELS:
+    if channel in SESSION_ONLY_CHANNELS:
         return None
     return employee.email
 
@@ -472,6 +530,94 @@ def _deliver_email_attempt(db: Session, *, organization, employee, token, latest
     return "lab_email"
 
 
+def _deliver_qr_email_attempt(db: Session, *, organization, employee, token, latest_version, **_) -> str:
+    scan_url = entry_url(Channel.QR, token.token)
+    send_lab_email(
+        org=organization,
+        recipient=employee.email,
+        subject=latest_version.subject,
+        body_text=(
+            f"Dear {employee.full_name.split()[0]},\n\n{latest_version.body_copy}\n\n"
+            "1. Open your phone camera.\n"
+            "2. Scan the QR code shown in this email.\n"
+            "3. Review the page before taking any requested action."
+        ),
+        cta_url=scan_url,
+        cta_text=latest_version.cta_text or "Open the secure page",
+        html_body=_qr_email_html(
+            organization=organization,
+            employee=employee,
+            latest_version=latest_version,
+            scan_url=scan_url,
+        ),
+    )
+    return "lab_qr_email"
+
+
+def _qr_email_html(*, organization, employee, latest_version, scan_url: str) -> str:
+    """Build an email-client-safe notice with a QR encoded in the HTML itself."""
+
+    heading = escape(latest_version.subject)
+    body = escape(latest_version.body_copy).replace("\n", "<br>")
+    first_name = escape(employee.full_name.split()[0])
+    company_name = escape(organization.name)
+    safe_scan_url = escape(scan_url, quote=True)
+    qr_table = _qr_html_table(scan_url)
+    return f"""<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f4f6f8;color:#202124;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f6f8;">
+      <tr>
+        <td align="center" style="padding:32px 12px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+                 style="max-width:680px;background:#ffffff;border:1px solid #dfe3e8;border-radius:8px;">
+            <tr>
+              <td style="padding:34px 38px 18px;text-align:center;border-bottom:1px solid #edf0f2;">
+                <div style="font-size:12px;line-height:18px;letter-spacing:1.4px;text-transform:uppercase;color:#667085;">
+                  {company_name} · Security notice
+                </div>
+                <h1 style="margin:10px 0 0;font-size:25px;line-height:34px;color:#173b73;font-weight:700;">
+                  {heading}
+                </h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:30px 38px 36px;font-size:16px;line-height:25px;">
+                <p style="margin:0 0 22px;">Dear {first_name},</p>
+                <p style="margin:0 0 25px;">{body}</p>
+                <p style="margin:0 0 18px;font-weight:600;">Scan the QR code below with your phone camera to continue.</p>
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;">
+                  <tr>
+                    <td style="padding:14px;border:1px solid #d8dde5;background:#ffffff;">
+                      {qr_table}
+                    </td>
+                  </tr>
+                </table>
+                <ol style="margin:0 0 28px;padding-left:22px;color:#344054;">
+                  <li style="margin:0 0 8px;">Open the camera on your mobile device.</li>
+                  <li style="margin:0 0 8px;">Point it at the QR code in this email.</li>
+                  <li style="margin:0;">Review the destination before completing any requested action.</li>
+                </ol>
+                <p style="margin:0;font-size:13px;line-height:20px;color:#667085;">
+                  If your email client does not display the QR code, use this secure link:<br>
+                  <a href="{safe_scan_url}" style="color:#175cd3;text-decoration:underline;word-break:break-all;">{safe_scan_url}</a>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 38px;background:#f8fafc;border-top:1px solid #edf0f2;border-radius:0 0 8px 8px;
+                         font-size:12px;line-height:19px;color:#667085;">
+                This automated notice was sent by {company_name}. Please follow your organization’s security and privacy policy.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"""
+
+
 def _deliver_sms_attempt(db: Session, *, organization, employee, attempt, token, latest_version, **_) -> str:
     provider_message_id = send_lab_sms(
         org=organization,
@@ -487,10 +633,10 @@ def _deliver_sms_attempt(db: Session, *, organization, employee, attempt, token,
 def _activate_in_platform_attempt(db: Session, *, campaign, attempt, token, **_) -> str:
     """Nothing is sent — the tokenized session simply goes live.
 
-    This is the normal path for QR, voice and deepfake, and also the fallback for email
+    This is the normal path for voice and deepfake, and also the fallback for email, QR
     or SMS when the organization has not enabled an outbound provider.
     """
-    in_platform = campaign.channel in IN_PLATFORM_CHANNELS
+    in_platform = campaign.channel in SESSION_ONLY_CHANNELS
     attempt.preview_payload = {
         **attempt.preview_payload,
         "session_state": "active",

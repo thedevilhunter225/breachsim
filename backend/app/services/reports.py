@@ -16,13 +16,12 @@ import html
 import io
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.crypto import pseudonymous_id
 from app.models.entities import (
     AuditLog,
     Campaign,
@@ -37,7 +36,8 @@ from app.models.entities import (
     TrainingAssignment,
     User,
 )
-from app.models.enums import PROTECTIVE_EVENT_TYPES, RISKY_EVENT_TYPES, EventType
+from app.models.enums import PROTECTIVE_EVENT_TYPES, RISKY_EVENT_TYPES, EventType, UserRole
+from app.services.evidence_store import persist_evidence
 
 CHANNEL_LABELS = {
     "email": "Email phishing",
@@ -48,10 +48,6 @@ CHANNEL_LABELS = {
 }
 
 
-def export_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / settings.report_export_dir
-
-
 def _fmt(value: datetime | None) -> str:
     if not value:
         return "-"
@@ -59,13 +55,13 @@ def _fmt(value: datetime | None) -> str:
     return moment.strftime("%Y-%m-%d %H:%M UTC")
 
 
-def _record(db: Session, *, organization_id, user_id, report_type: str, fmt: str, path: Path, filters: dict) -> ReportExport:
+def _record(db: Session, *, organization_id, user_id, report_type: str, fmt: str, path: str, filters: dict) -> ReportExport:
     report = ReportExport(
         organization_id=organization_id,
         generated_by_user_id=user_id,
         report_type=report_type,
         format=fmt,
-        path=str(path),
+        path=path,
         filters=filters,
     )
     db.add(report)
@@ -108,9 +104,13 @@ def build_audit_csv(db: Session, organization_id) -> str:
 
 
 def export_audit_csv(db: Session, organization_id, user_id) -> ReportExport:
-    export_dir().mkdir(parents=True, exist_ok=True)
-    path = export_dir() / "audit-report.csv"
-    path.write_text(build_audit_csv(db, organization_id), encoding="utf-8")
+    path = persist_evidence(
+        build_audit_csv(db, organization_id).encode("utf-8"),
+        organization_id=organization_id,
+        report_type="audit",
+        extension="csv",
+        content_type="text/csv; charset=utf-8",
+    )
     return _record(
         db,
         organization_id=organization_id,
@@ -270,7 +270,22 @@ def metrics_targets(campaign: Campaign) -> int:
     return len(campaign.targets)
 
 
-def build_campaign_html(db: Session, organization_id, campaign_id) -> str:
+def _can_view_named_identities(db: Session, organization_id, user_id) -> bool:
+    organization = db.query(Organization).filter(Organization.id == organization_id).first()
+    if not organization or organization.reporting_identity_mode.value != "named":
+        return False
+    user = db.query(User).filter(User.id == user_id, User.organization_id == organization_id).first()
+    return bool(user and any(link.role.name == UserRole.RISK_IDENTITY_VIEWER for link in user.roles))
+
+
+def _report_identity(organization_id, employee: Employee, include_identities: bool) -> tuple[str, str]:
+    if include_identities:
+        return employee.full_name, employee.email
+    label = pseudonymous_id(str(organization_id), str(employee.id))[:10].upper()
+    return f"Employee {label}", ""
+
+
+def build_campaign_html(db: Session, organization_id, campaign_id, *, include_identities: bool = False) -> str:
     data = gather_campaign_evidence(db, organization_id, campaign_id)
     campaign = data["campaign"]
     scenario = data["scenario"]
@@ -311,7 +326,7 @@ def build_campaign_html(db: Session, organization_id, campaign_id) -> str:
     employee_rows = "".join(
         f"""
         <tr class="outcome-{row['outcome'].lower().replace(' ', '-')}">
-          <td><strong>{esc(row['employee'].full_name)}</strong><br><span class="muted">{esc(row['employee'].email)}</span></td>
+          <td><strong>{esc(_report_identity(organization_id, row['employee'], include_identities)[0])}</strong><br><span class="muted">{esc(_report_identity(organization_id, row['employee'], include_identities)[1])}</span></td>
           <td><span class="pill pill-{row['outcome'].lower().replace(' ', '-')}">{esc(row['outcome'])}</span></td>
           <td class="num">{row['risky']}</td>
           <td class="num">{row['protective']}</td>
@@ -326,7 +341,7 @@ def build_campaign_html(db: Session, organization_id, campaign_id) -> str:
     decision_rows = "".join(
         f"""
         <tr>
-          <td>{esc(data['employees'].get(step.employee_id).full_name if data['employees'].get(step.employee_id) else '-')}</td>
+          <td>{esc(_report_identity(organization_id, data['employees'][step.employee_id], include_identities)[0] if data['employees'].get(step.employee_id) else '-')}</td>
           <td class="num">{step.step_index + 1}</td>
           <td>{esc(step.step_key)}</td>
           <td>{esc(step.response_label)}</td>
@@ -464,9 +479,18 @@ def build_campaign_html(db: Session, organization_id, campaign_id) -> str:
 
 
 def export_campaign_html(db: Session, organization_id, user_id, campaign_id) -> ReportExport:
-    export_dir().mkdir(parents=True, exist_ok=True)
-    path = export_dir() / f"campaign-report-{campaign_id}.html"
-    path.write_text(build_campaign_html(db, organization_id, campaign_id), encoding="utf-8")
+    path = persist_evidence(
+        build_campaign_html(
+            db,
+            organization_id,
+            campaign_id,
+            include_identities=_can_view_named_identities(db, organization_id, user_id),
+        ).encode("utf-8"),
+        organization_id=organization_id,
+        report_type=f"campaign-{campaign_id}",
+        extension="html",
+        content_type="text/html; charset=utf-8",
+    )
     return _record(
         db,
         organization_id=organization_id,
@@ -478,7 +502,7 @@ def export_campaign_html(db: Session, organization_id, user_id, campaign_id) -> 
     )
 
 
-def build_campaign_csv(db: Session, organization_id, campaign_id) -> str:
+def build_campaign_csv(db: Session, organization_id, campaign_id, *, include_identities: bool = False) -> str:
     """Flat per-employee outcome table, for import into a spreadsheet."""
     data = gather_campaign_evidence(db, organization_id, campaign_id)
     buffer = io.StringIO()
@@ -500,10 +524,11 @@ def build_campaign_csv(db: Session, organization_id, campaign_id) -> str:
     channel = data["campaign"].channel.value
     for row in data["rows"]:
         employee = row["employee"]
+        identity_name, identity_email = _report_identity(organization_id, employee, include_identities)
         writer.writerow(
             [
-                employee.full_name,
-                employee.email,
+                identity_name,
+                identity_email,
                 employee.department.name if employee.department else "",
                 channel,
                 row["outcome"],
@@ -518,9 +543,18 @@ def build_campaign_csv(db: Session, organization_id, campaign_id) -> str:
 
 
 def export_campaign_csv(db: Session, organization_id, user_id, campaign_id) -> ReportExport:
-    export_dir().mkdir(parents=True, exist_ok=True)
-    path = export_dir() / f"campaign-report-{campaign_id}.csv"
-    path.write_text(build_campaign_csv(db, organization_id, campaign_id), encoding="utf-8")
+    path = persist_evidence(
+        build_campaign_csv(
+            db,
+            organization_id,
+            campaign_id,
+            include_identities=_can_view_named_identities(db, organization_id, user_id),
+        ).encode("utf-8"),
+        organization_id=organization_id,
+        report_type=f"campaign-{campaign_id}",
+        extension="csv",
+        content_type="text/csv; charset=utf-8",
+    )
     return _record(
         db,
         organization_id=organization_id,

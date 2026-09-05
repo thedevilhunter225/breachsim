@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_user, require_roles
+from app.core.crypto import blind_index
 from app.db.session import get_db
 from app.models.entities import ConsentRecord, Department, Employee, EventLog, RiskScore, TrainingAssignment
-from app.models.enums import EventType
-from app.models.enums import UserRole
+from app.models.enums import EventType, UserRole
 from app.schemas.employees import (
     ConsentUpdate,
     ContextProfileRead,
@@ -22,7 +22,7 @@ from app.schemas.employees import (
 )
 from app.services.audit import access_log, audit_log
 from app.services.deletion import delete_employee
-from app.services.profiling import build_context_profile, ensure_context_profile
+from app.services.profiling import build_context_profile
 
 router = APIRouter()
 
@@ -64,7 +64,10 @@ def list_employees(
     )
     if department_id:
         query = query.filter(Employee.department_id == department_id)
-    employees = query.order_by(Employee.full_name.asc()).all()
+    # Name is encrypted at rest, so ordering by the database ciphertext would be
+    # meaningless and could leak stable ordering information. Decrypt only the
+    # tenant-scoped result set and sort it in application memory.
+    employees = sorted(query.all(), key=lambda employee: employee.full_name.casefold())
     if risk_band == "high":
         employees = [employee for employee in employees if employee.risk_score >= 60]
     elif risk_band == "medium":
@@ -80,7 +83,11 @@ def create_employee(
     db: Annotated[Session, Depends(get_db)],
     user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
 ) -> EmployeeRead:
-    employee = Employee(organization_id=user.organization_id, **payload.model_dump())
+    employee = Employee(
+        organization_id=user.organization_id,
+        email_blind_index=blind_index(str(payload.email), namespace="employee-email"),
+        **payload.model_dump(),
+    )
     db.add(employee)
     db.flush()
     db.add(ConsentRecord(employee_id=employee.id, status=employee.consent_status, source="manual"))
@@ -117,9 +124,16 @@ def import_employees(
             for key, value in data.items():
                 setattr(employee, key, value)
             employee.department_id = department.id
+            employee.email_blind_index = blind_index(str(row.email), namespace="employee-email")
             updated += 1
         else:
-            employee = Employee(organization_id=user.organization_id, department_id=department.id, **data)
+            employee = Employee(
+                organization_id=user.organization_id,
+                department_id=department.id,
+                email_blind_index=blind_index(str(row.email), namespace="employee-email"),
+                directory_source="csv",
+                **data,
+            )
             db.add(employee)
             db.flush()
             db.add(ConsentRecord(employee_id=employee.id, status=employee.consent_status, source="csv_import"))
@@ -253,6 +267,8 @@ def update_employee(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
     for key, value in payload.model_dump(exclude_none=True).items():
         setattr(employee, key, value)
+    if payload.email is not None:
+        employee.email_blind_index = blind_index(str(payload.email), namespace="employee-email")
     build_context_profile(db, employee)
     audit_log(db, organization_id=user.organization_id, user_id=user.id, action="employee.update", resource_type="employee", resource_id=str(employee.id), details=payload.model_dump(exclude_none=True, mode="json"))
     db.commit()

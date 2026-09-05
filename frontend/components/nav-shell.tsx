@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   BookOpenCheck,
+  Building2,
   ChevronRight,
   CircleGauge,
   FileChartColumn,
@@ -20,7 +21,6 @@ import {
   Sun,
   UserRoundCheck,
   UsersRound,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -73,7 +73,14 @@ const systemItem: NavigationItem = {
   icon: Settings,
 };
 
-const allItems = [...navigationGroups.flatMap((group) => group.items), systemItem];
+const platformItem: NavigationItem = {
+  href: "/platform",
+  label: "Platform Operations",
+  description: "Customer provisioning",
+  icon: Building2,
+};
+
+const allItems = [...navigationGroups.flatMap((group) => group.items), systemItem, platformItem];
 
 export function NavShell({
   children,
@@ -143,6 +150,7 @@ export function NavShell({
       </div>
 
       <div className="shrink-0 border-t border-white/[0.08] p-3">
+        {user.roles.includes("platform_operator") ? <NavigationLink item={platformItem} pathname={pathname} /> : null}
         <NavigationLink item={systemItem} pathname={pathname} />
 
         <div className="mt-3 rounded-xl border border-white/[0.08] bg-white/[0.045] p-3">

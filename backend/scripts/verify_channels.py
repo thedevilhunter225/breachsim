@@ -12,7 +12,6 @@ Usage::
 
 from __future__ import annotations
 
-import sys
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -41,7 +40,11 @@ class Client:
             "reviewer": ("reviewer@breachsim-lab.com", "Reviewer123!"),
             "manager": ("manager@breachsim-lab.com", "Manager123!"),
         }.items():
-            r = self.http.post(f"{API}/auth/login", json={"email": email, "password": pw})
+            r = self.http.post(
+                f"{API}/auth/login",
+                json={"email": email, "password": pw},
+                headers={"X-BreachSim-API-Client": "bearer"},
+            )
             r.raise_for_status()
             self.tokens[role] = r.json()["access_token"]
 

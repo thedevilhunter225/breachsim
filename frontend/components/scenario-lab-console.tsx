@@ -48,7 +48,7 @@ const CHANNELS: Array<{
 }> = [
   { value: "email", label: "Email", icon: Mail, blurb: "Classic inbox lure with tracked link.", requiresPersona: false },
   { value: "sms", label: "SMS", icon: MessageSquare, blurb: "Smishing message to an allowlisted number.", requiresPersona: false },
-  { value: "qr", label: "QR", icon: QrCode, blurb: "Printable poster with a tracked scan code.", requiresPersona: false },
+  { value: "qr", label: "QR", icon: QrCode, blurb: "Email with an embedded, uniquely tracked QR code.", requiresPersona: false },
   { value: "vishing", label: "Voice", icon: PhoneCall, blurb: "Branching call script with live pressure.", requiresPersona: true },
   { value: "deepfake", label: "Deepfake", icon: Video, blurb: "Synthetic media impersonation of an approved persona.", requiresPersona: true },
 ];
@@ -84,7 +84,7 @@ function channelMeta(channel: string) {
 }
 
 function subjectLabel(channel: string) {
-  if (channel === "qr") return "Poster title";
+  if (channel === "qr") return "QR email subject";
   if (channel === "sms") return "Message title";
   if (channel === "vishing") return "Call reason";
   if (channel === "deepfake") return "Message subject";
@@ -92,7 +92,7 @@ function subjectLabel(channel: string) {
 }
 
 function bodyLabel(channel: string) {
-  if (channel === "qr") return "Poster copy";
+  if (channel === "qr") return "QR email body";
   if (channel === "sms") return "SMS copy";
   if (channel === "vishing") return "Caller pretext";
   if (channel === "deepfake") return "Spoken transcript";
@@ -102,9 +102,7 @@ function bodyLabel(channel: string) {
 function aiProviderLabel(metadata?: Record<string, unknown>) {
   const provider = typeof metadata?.provider === "string" ? metadata.provider : "rule-based";
   const model = typeof metadata?.model === "string" ? metadata.model : "fallback";
-  if (provider === "ollama") return `Local model · ${model}`;
-  if (provider === "openai") return `OpenAI · ${model}`;
-  if (provider === "gemini") return `Gemini · ${model}`;
+  if (provider === "together") return `Together AI · ${model}`;
   return "Built-in generator";
 }
 

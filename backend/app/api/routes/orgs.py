@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
 from app.models.entities import Department, Organization
-from app.models.enums import UserRole
+from app.models.enums import ReportingIdentityMode, UserRole
 from app.schemas.employees import DepartmentCreate, DepartmentRead
 from app.services.audit import audit_log
 from app.services.deletion import delete_department
@@ -27,6 +27,7 @@ def get_current_org(db: Annotated[Session, Depends(get_db)], user=Depends(get_cu
         "timezone": org.timezone,
         "retention_days": org.retention_days,
         "privacy_notice": org.privacy_notice,
+        "reporting_identity_mode": org.reporting_identity_mode.value,
     }
 
 
@@ -40,10 +41,18 @@ def update_current_org(
     for field in ["name", "timezone", "retention_days", "privacy_notice"]:
         if field in payload:
             setattr(org, field, payload[field])
+    if "reporting_identity_mode" in payload:
+        try:
+            org.reporting_identity_mode = ReportingIdentityMode(payload["reporting_identity_mode"])
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="reporting_identity_mode must be pseudonymous or named",
+            ) from exc
     audit_log(db, organization_id=user.organization_id, user_id=user.id, action="org.update", resource_type="organization", resource_id=str(org.id), details=payload)
     db.commit()
     db.refresh(org)
-    return {"id": str(org.id), "name": org.name, "slug": org.slug, "timezone": org.timezone, "retention_days": org.retention_days, "privacy_notice": org.privacy_notice}
+    return {"id": str(org.id), "name": org.name, "slug": org.slug, "timezone": org.timezone, "retention_days": org.retention_days, "privacy_notice": org.privacy_notice, "reporting_identity_mode": org.reporting_identity_mode.value}
 
 
 @router.get("/departments", response_model=list[DepartmentRead])

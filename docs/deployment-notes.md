@@ -1,20 +1,15 @@
-# Deployment Notes
+# Deployment notes
 
-## Local Docker stack
+`docker-compose.yml` is the local development/demo stack. It exposes PostgreSQL and Redis and
+may use the SMTP adapter only for allowlisted test mailboxes. It is not an enterprise delivery
+topology.
 
-- `docker-compose.yml` starts PostgreSQL, Redis, the FastAPI API, the RQ worker, and the Next.js frontend.
-- Backend defaults to SQLite for bare local runs, but Docker uses PostgreSQL.
+The supported production topology is defined in `infra/terraform`: Front Door Premium/WAF,
+private Container Apps, Service Bus Premium workers, Azure Managed Redis, PostgreSQL Flexible
+Server HA/replica, Key Vault and immutable evidence storage. Follow
+[production-deployment.md](production-deployment.md) and the runbooks under `docs/runbooks`.
 
-## Environment
-
-- Copy `.env.example` to `.env` and adjust secrets before any non-demo use.
-- Replace `SECRET_KEY` and `ENCRYPTION_KEY` outside the lab environment.
-- Keep lab-only provider integrations disabled unless explicitly testing in a controlled environment.
-
-## Production hardening follow-ups
-
-- Move secrets to a dedicated secret manager.
-- Terminate TLS at an ingress or reverse proxy.
-- Add object storage for report exports.
-- Add real background scheduling and retry policies.
-- Add database encryption and backup policies aligned with organization rules.
+`docker-compose.production.yml` is retained only as a single-host evaluation reference. It
+does not satisfy the 99.9% availability, 15-minute RPO, four-hour RTO, managed-secret,
+multi-tenant custom-domain or 50,000-recipient launch requirements and must not be presented
+to customers as the production service.

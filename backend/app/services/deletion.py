@@ -269,15 +269,15 @@ def _redact_employee_from_content(db: Session, *, employee, scenario_ids: list) 
     versions = db.query(ScenarioVersion).filter(ScenarioVersion.scenario_id.in_(scenario_ids)).all()
     for version in versions:
         changed = False
-        for field in ("subject", "body_copy", "landing_page_copy", "cta_text"):
-            value = getattr(version, field, None)
+        for field_name in ("subject", "body_copy", "landing_page_copy", "cta_text"):
+            value = getattr(version, field_name, None)
             if not value:
                 continue
             scrubbed = value
             for name in names:
                 scrubbed = scrubbed.replace(name, REDACTED)
             if scrubbed != value:
-                setattr(version, field, scrubbed)
+                setattr(version, field_name, scrubbed)
                 changed = True
 
         payload = version.channel_payload or {}

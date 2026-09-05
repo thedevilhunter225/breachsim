@@ -8,21 +8,30 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import (
+    CampaignRunStatus,
     CampaignStatus,
     CampaignType,
     Channel,
+    ConnectionStatus,
     ConsentStatus,
     DeliveryStatus,
     DifficultyLevel,
+    DomainKind,
+    DomainPurpose,
+    EmailProviderKind,
     EmployeeStatus,
     EventType,
     MediaAssetKind,
     MediaAssetStatus,
     MediaModality,
+    OutboxStatus,
     PersonaStatus,
+    ReportingIdentityMode,
     ScenarioStatus,
+    SuppressionReason,
     TrainingAssignmentStatus,
     UserRole,
+    VerificationStatus,
 )
 from app.models.types import EncryptedString
 
@@ -35,6 +44,10 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
     retention_days: Mapped[int] = mapped_column(Integer, default=365)
     privacy_notice: Mapped[str] = mapped_column(Text, default="Training and security awareness platform.")
+    reporting_identity_mode: Mapped[ReportingIdentityMode] = mapped_column(
+        Enum(ReportingIdentityMode), default=ReportingIdentityMode.PSEUDONYMOUS, nullable=False
+    )
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     email_provider_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     email_provider_mode: Mapped[str] = mapped_column(String(32), default="sandbox")
     smtp_host: Mapped[str | None] = mapped_column(String(255))
@@ -75,6 +88,124 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     users: Mapped[list["User"]] = relationship(back_populates="organization")
     departments: Mapped[list["Department"]] = relationship(back_populates="organization")
     employees: Mapped[list["Employee"]] = relationship(back_populates="organization")
+    domains: Mapped[list["OrganizationDomain"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan"
+    )
+    branding: Mapped["OrganizationBranding | None"] = relationship(
+        back_populates="organization", cascade="all, delete-orphan", uselist=False
+    )
+    email_connections: Mapped[list["EmailConnection"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan"
+    )
+
+
+class OrganizationDomain(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "organization_domains"
+    __table_args__ = (
+        UniqueConstraint("hostname", "purpose", name="uq_domain_hostname_purpose"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    hostname: Mapped[str] = mapped_column(String(253), nullable=False, index=True)
+    purpose: Mapped[DomainPurpose] = mapped_column(Enum(DomainPurpose), nullable=False, index=True)
+    kind: Mapped[DomainKind] = mapped_column(Enum(DomainKind), default=DomainKind.CUSTOM, nullable=False)
+    status: Mapped[VerificationStatus] = mapped_column(
+        Enum(VerificationStatus), default=VerificationStatus.PENDING, nullable=False, index=True
+    )
+    verification_token_hash: Mapped[str | None] = mapped_column(String(64))
+    dns_instructions: Mapped[dict] = mapped_column(JSON, default=dict)
+    validation_error: Mapped[str | None] = mapped_column(Text)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    frontdoor_domain_id: Mapped[str | None] = mapped_column(String(255))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    organization: Mapped["Organization"] = relationship(back_populates="domains")
+
+
+class OrganizationBranding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "organization_branding"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, unique=True, index=True
+    )
+    logo_url: Mapped[str | None] = mapped_column(String(1024))
+    primary_color: Mapped[str] = mapped_column(String(7), default="#173B73", nullable=False)
+    accent_color: Mapped[str] = mapped_column(String(7), default="#175CD3", nullable=False)
+    sender_name: Mapped[str] = mapped_column(String(255), default="Security Awareness", nullable=False)
+    legal_footer: Mapped[str] = mapped_column(
+        Text, default="Authorized security-awareness simulation.", nullable=False
+    )
+    approved_template_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    organization: Mapped["Organization"] = relationship(back_populates="branding")
+
+
+class EmailConnection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "email_connections"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "provider", "sender_email", name="uq_org_provider_sender"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    provider: Mapped[EmailProviderKind] = mapped_column(Enum(EmailProviderKind), nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    customer_tenant_id: Mapped[str | None] = mapped_column(String(255))
+    sender_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    sender_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    credential_secret_ref: Mapped[str | None] = mapped_column(String(1024))
+    reconciliation_secret_ref: Mapped[str | None] = mapped_column(String(1024))
+    delegated_subject: Mapped[str | None] = mapped_column(String(320))
+    scopes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    status: Mapped[ConnectionStatus] = mapped_column(
+        Enum(ConnectionStatus), default=ConnectionStatus.PENDING, nullable=False, index=True
+    )
+    rate_limit_per_minute: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
+    last_health_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    organization: Mapped["Organization"] = relationship(back_populates="email_connections")
+
+
+class SsoConnection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "sso_connections"
+    __table_args__ = (UniqueConstraint("organization_id", "provider", name="uq_org_sso_provider"),)
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    issuer: Mapped[str] = mapped_column(String(1024), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    client_secret_ref: Mapped[str | None] = mapped_column(String(1024))
+    allowed_domains: Mapped[list[str]] = mapped_column(JSON, default=list)
+    group_role_mappings: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[ConnectionStatus] = mapped_column(
+        Enum(ConnectionStatus), default=ConnectionStatus.PENDING, nullable=False
+    )
+
+
+class ScimCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "scim_credentials"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    token_prefix: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    description: Mapped[str] = mapped_column(String(255), default="SCIM provisioning token")
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class OidcTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "oidc_transactions"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    sso_connection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sso_connections.id"), nullable=False, index=True)
+    state_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    code_verifier: Mapped[str] = mapped_column(EncryptedString(1024), nullable=False)
+    nonce: Mapped[str] = mapped_column(EncryptedString(1024), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Role(UUIDPrimaryKeyMixin, Base):
@@ -93,10 +224,30 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    mfa_secret: Mapped[str | None] = mapped_column(EncryptedString(1024))
+    mfa_recovery_hashes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    external_subject: Mapped[str | None] = mapped_column(String(255), index=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="users")
     roles: Mapped[list["UserRoleLink"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     employee_links: Mapped[list["Employee"]] = relationship(back_populates="portal_user")
+    sessions: Mapped[list["AuthSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
+class AuthSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "auth_sessions"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    token_jti: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    idle_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    csrf_token_hash: Mapped[str | None] = mapped_column(String(64))
+    auth_method: Mapped[str] = mapped_column(String(32), default="password", nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+    user: Mapped["User"] = relationship(back_populates="sessions")
 
 
 class UserRoleLink(UUIDPrimaryKeyMixin, Base):
@@ -110,12 +261,33 @@ class UserRoleLink(UUIDPrimaryKeyMixin, Base):
     role: Mapped["Role"] = relationship(back_populates="users")
 
 
+class OrganizationInvitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "organization_invitations"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    invited_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    email_ciphertext: Mapped[str] = mapped_column(EncryptedString(1024), nullable=False)
+    email_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    invitee_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.ADMIN, nullable=False)
+    token_public_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    token_secret_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class Department(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "departments"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "directory_source", "external_id", name="uq_org_department_external"),
+    )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(64), nullable=False)
+    directory_source: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String(255), index=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="departments")
     employees: Mapped[list["Employee"]] = relationship(back_populates="department")
@@ -123,14 +295,20 @@ class Department(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class Employee(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "employees"
-    __table_args__ = (UniqueConstraint("organization_id", "employee_id", name="uq_org_employee_code"),)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "employee_id", name="uq_org_employee_code"),
+        UniqueConstraint("organization_id", "directory_source", "external_id", name="uq_org_employee_external"),
+    )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
     department_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("departments.id"), index=True)
     portal_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     employee_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(EncryptedString(1024), nullable=False)
+    email: Mapped[str] = mapped_column(EncryptedString(1024), nullable=False)
+    email_blind_index: Mapped[str | None] = mapped_column(String(64), index=True)
+    directory_source: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String(255), index=True)
     phone: Mapped[str | None] = mapped_column(EncryptedString(1024))
     role_title: Mapped[str] = mapped_column(String(255), nullable=False)
     approved_context_summary: Mapped[str | None] = mapped_column(EncryptedString(4096))
@@ -167,7 +345,7 @@ class ContextProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "context_profiles"
 
     employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
-    employee_context_profile: Mapped[str] = mapped_column(Text, nullable=False)
+    employee_context_profile: Mapped[str] = mapped_column(EncryptedString(8192), nullable=False)
     likely_scenario_themes: Mapped[list[str]] = mapped_column(JSON, default=list)
     allowed_channels: Mapped[list[str]] = mapped_column(JSON, default=list)
     sensitivity_tags: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -372,7 +550,7 @@ class ScenarioVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     validation_result: Mapped[dict] = mapped_column(JSON, default=dict)
     notes: Mapped[str | None] = mapped_column(Text)
     #: Channel-specific structured content: the branching call script for vishing, the
-    #: impersonation brief for deepfake, the poster spec for QR. Empty for plain email.
+    #: impersonation brief for deepfake, the email/scan spec for QR. Empty for plain email.
     channel_payload: Mapped[dict] = mapped_column(JSON, default=dict)
 
     scenario: Mapped["Scenario"] = relationship(back_populates="versions", foreign_keys=[scenario_id])
@@ -396,11 +574,50 @@ class Campaign(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     target_filters: Mapped[dict] = mapped_column(JSON, default=dict)
     sandbox_mode: Mapped[bool] = mapped_column(Boolean, default=True)
     learning_objective: Mapped[str] = mapped_column(String(255), default="Recognize social engineering patterns.")
+    landing_domain_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organization_domains.id"), index=True)
+    email_connection_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("email_connections.id"), index=True)
 
     targets: Mapped[list["CampaignTarget"]] = relationship(back_populates="campaign", cascade="all, delete-orphan")
     scenario_links: Mapped[list["CampaignScenario"]] = relationship(back_populates="campaign", cascade="all, delete-orphan")
     delivery_attempts: Mapped[list["DeliveryAttempt"]] = relationship(back_populates="campaign")
     events: Mapped[list["EventLog"]] = relationship(back_populates="campaign")
+    runs: Mapped[list["CampaignRun"]] = relationship(back_populates="campaign")
+
+
+class CampaignRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "campaign_runs"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_org_campaign_run_idempotency"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"), nullable=False, index=True)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[CampaignRunStatus] = mapped_column(
+        Enum(CampaignRunStatus), default=CampaignRunStatus.QUEUED, nullable=False, index=True
+    )
+    scenario_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    branding_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    delivery_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    reporting_identity_mode: Mapped[ReportingIdentityMode] = mapped_column(
+        Enum(ReportingIdentityMode), default=ReportingIdentityMode.PSEUDONYMOUS, nullable=False
+    )
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    target_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    queued_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    processing_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    accepted_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    bounced_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    suppressed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    unknown_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    campaign: Mapped["Campaign"] = relationship(back_populates="runs")
+    attempts: Mapped[list["DeliveryAttempt"]] = relationship(back_populates="campaign_run")
 
 
 class CampaignTarget(UUIDPrimaryKeyMixin, Base):
@@ -426,7 +643,11 @@ class CampaignScenario(UUIDPrimaryKeyMixin, Base):
 
 class DeliveryAttempt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "delivery_attempts"
+    __table_args__ = (
+        UniqueConstraint("campaign_run_id", "employee_id", name="uq_run_employee_attempt"),
+    )
 
+    campaign_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("campaign_runs.id"), index=True)
     campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"), nullable=False, index=True)
     employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
     scenario_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("scenarios.id"))
@@ -436,8 +657,17 @@ class DeliveryAttempt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     preview_payload: Mapped[dict] = mapped_column(JSON, default=dict)
     provider_message_id: Mapped[str | None] = mapped_column(String(255))
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    recipient_ciphertext: Mapped[str | None] = mapped_column(EncryptedString(1024))
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), unique=True, index=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(128))
+    last_error_detail: Mapped[str | None] = mapped_column(Text)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bounced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     campaign: Mapped["Campaign"] = relationship(back_populates="delivery_attempts")
+    campaign_run: Mapped["CampaignRun | None"] = relationship(back_populates="attempts")
 
 
 class LandingToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -446,10 +676,75 @@ class LandingToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     delivery_attempt_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("delivery_attempts.id"), nullable=False, index=True)
     employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
     campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"), nullable=False, index=True)
-    token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    token: Mapped[str | None] = mapped_column(String(255), unique=True)
+    token_public_id: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
+    token_secret_hash: Mapped[str | None] = mapped_column(String(64))
+    token_secret_ciphertext: Mapped[str | None] = mapped_column(EncryptedString(1024))
+    landing_hostname: Mapped[str | None] = mapped_column(String(253), index=True)
     landing_type: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class QrAssetToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "qr_asset_tokens"
+
+    landing_token_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("landing_tokens.id"), nullable=False, index=True)
+    public_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    secret_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    secret_ciphertext: Mapped[str | None] = mapped_column(EncryptedString(1024))
+    qr_payload_ciphertext: Mapped[str] = mapped_column(EncryptedString(4096), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class OutboxEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "outbox_events"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    aggregate_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    aggregate_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[OutboxStatus] = mapped_column(
+        Enum(OutboxStatus), default=OutboxStatus.PENDING, nullable=False, index=True
+    )
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+    )
+    publish_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+
+class DeliverySuppression(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "delivery_suppressions"
+    __table_args__ = (UniqueConstraint("organization_id", "email_hash", name="uq_org_suppression_email"),)
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    email_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reason: Mapped[SuppressionReason] = mapped_column(Enum(SuppressionReason), nullable=False)
+    provider: Mapped[EmailProviderKind | None] = mapped_column(Enum(EmailProviderKind))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class ProviderEventReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "provider_event_receipts"
+    __table_args__ = (
+        UniqueConstraint("email_connection_id", "provider_event_id", name="uq_connection_provider_event"),
+    )
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    email_connection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("email_connections.id"), nullable=False, index=True)
+    delivery_attempt_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("delivery_attempts.id"), nullable=False, index=True)
+    provider_event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reconciled_status: Mapped[DeliveryStatus] = mapped_column(Enum(DeliveryStatus), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(128))
+    signature_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class EventLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -565,6 +860,8 @@ class AuditLog(UUIDPrimaryKeyMixin, Base):
     resource_type: Mapped[str] = mapped_column(String(255), nullable=False)
     resource_id: Mapped[str | None] = mapped_column(String(255))
     details: Mapped[dict] = mapped_column(JSON, default=dict)
+    previous_hash: Mapped[str | None] = mapped_column(String(64))
+    entry_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 

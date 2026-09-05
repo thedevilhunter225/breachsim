@@ -4,7 +4,6 @@ import clsx from "clsx";
 import {
   ArrowRight,
   Download,
-  ExternalLink,
   FileChartColumn,
   FileSpreadsheet,
   FileText,

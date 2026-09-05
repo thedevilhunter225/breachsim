@@ -17,7 +17,7 @@ from app.models.entities import ImpersonationPersona, MediaAsset
 from app.models.enums import MediaAssetKind
 from app.services import media_store
 from app.services.audit import audit_log
-from app.services.media import ProviderError, get_video_provider, get_voice_provider
+from app.services.media import ProviderError, get_voice_provider
 
 MAX_UPLOAD_BYTES = settings.media_max_upload_mb * 1024 * 1024
 ALLOWED_AUDIO = {"audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav", "audio/webm", "audio/ogg"}

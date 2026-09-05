@@ -10,7 +10,6 @@ from app.models.entities import Campaign
 from app.services.delivery import sms_segments
 from tests.conftest import login
 
-
 # --------------------------------------------------------------------------------------
 # SMS encoding / segmentation
 # --------------------------------------------------------------------------------------

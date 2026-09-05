@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8001/api/v1";
@@ -8,13 +8,13 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8001/
 export function QrScanRedirect({ token }: { token: string }) {
   const router = useRouter();
   const [status, setStatus] = useState("Opening secure verification...");
+  const scanRequest = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function recordScan() {
-      try {
-        await fetch(`${API_BASE}/public/training/${token}/events`, {
+    if (!scanRequest.current) {
+      scanRequest.current = fetch(`${API_BASE}/public/training/${token}/events`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -25,16 +25,17 @@ export function QrScanRedirect({ token }: { token: string }) {
               source: "qr_scan_route",
             },
           }),
-        });
-      } finally {
+        })
+        .then(() => undefined)
+        .catch(() => undefined);
+    }
+
+    void scanRequest.current.finally(() => {
         if (!cancelled) {
           setStatus("Loading verification page...");
           window.setTimeout(() => router.replace(`/training/${token}`), 500);
         }
-      }
-    }
-
-    void recordScan();
+    });
 
     return () => {
       cancelled = true;

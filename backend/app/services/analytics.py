@@ -6,7 +6,17 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.entities import Campaign, Department, DeliveryAttempt, Employee, EventLog, RiskScore, Scenario, TrainingCompletion
+from app.core.crypto import pseudonymous_id
+from app.models.entities import (
+    Campaign,
+    DeliveryAttempt,
+    Department,
+    Employee,
+    EventLog,
+    RiskScore,
+    Scenario,
+    TrainingCompletion,
+)
 from app.models.enums import PROTECTIVE_EVENT_TYPES, RISKY_EVENT_TYPES, Channel, EventType
 from app.schemas.analytics import (
     AdaptiveRecommendation,
@@ -134,11 +144,17 @@ def build_dashboard(db: Session, organization_id) -> DashboardResponse:
     )
 
 
-def build_risk_intelligence(db: Session, organization_id) -> RiskIntelligenceResponse:
+def build_risk_intelligence(db: Session, organization_id, *, include_identities: bool = False) -> RiskIntelligenceResponse:
     employees = db.query(Employee).filter(Employee.organization_id == organization_id).all()
     departments = db.query(Department).filter(Department.organization_id == organization_id).all()
     events = db.query(EventLog).filter(EventLog.organization_id == organization_id).all()
-    adaptive_recommendations = build_adaptive_recommendations(db, organization_id, employees, events)
+    adaptive_recommendations = build_adaptive_recommendations(
+        db,
+        organization_id,
+        employees,
+        events,
+        include_identities=include_identities,
+    )
     risk_scores = db.query(RiskScore).filter(RiskScore.organization_id == organization_id).all()
     completions = (
         db.query(TrainingCompletion)
@@ -194,9 +210,7 @@ def build_risk_intelligence(db: Session, organization_id) -> RiskIntelligenceRes
         delivered = sum(1 for event in department_events if event.event_type == EventType.DELIVERED)
         opened = sum(1 for event in department_events if event.event_type == EventType.OPENED_EMAIL)
         clicked = sum(1 for event in department_events if event.event_type == EventType.CLICKED_LINK)
-        submitted = sum(1 for event in department_events if event.event_type == EventType.SUBMITTED_FORM_BOOLEAN)
         reported = sum(1 for event in department_events if event.event_type in PROTECTIVE_EVENT_TYPES and event.event_type != EventType.TRAINING_COMPLETED)
-        scanned = sum(1 for event in department_events if event.event_type == EventType.SCANNED_QR)
         risky_interactions = sum(1 for event in department_events if event.event_type in RISKY_EVENT_TYPES)
 
         event_counter = Counter(
@@ -273,7 +287,14 @@ def build_risk_intelligence(db: Session, organization_id) -> RiskIntelligenceRes
     )
 
 
-def build_adaptive_recommendations(db: Session, organization_id, employees: list[Employee], events: list[EventLog]) -> list[AdaptiveRecommendation]:
+def build_adaptive_recommendations(
+    db: Session,
+    organization_id,
+    employees: list[Employee],
+    events: list[EventLog],
+    *,
+    include_identities: bool = False,
+) -> list[AdaptiveRecommendation]:
     risky_events = RISKY_EVENT_TYPES
     positive_events = PROTECTIVE_EVENT_TYPES
 
@@ -341,11 +362,12 @@ def build_adaptive_recommendations(db: Session, organization_id, employees: list
                 "No risky interactions yet; using role, department, and current risk score as the cold-start signal.",
             ]
 
+        identity_label = pseudonymous_id(str(organization_id), str(employee.id))[:10].upper()
         recommendations.append(
             AdaptiveRecommendation(
-                employee_id=str(employee.id),
-                employee_name=employee.full_name,
-                employee_email=employee.email,
+                employee_id=str(employee.id) if include_identities else f"anon-{identity_label}",
+                employee_name=employee.full_name if include_identities else f"Employee {identity_label}",
+                employee_email=employee.email if include_identities else "",
                 department=employee.department.name if employee.department else None,
                 current_risk_score=employee.risk_score,
                 weak_channel=weak_channel,

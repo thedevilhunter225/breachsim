@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_roles
+from app.core.config import is_production_environment, settings
 from app.db.session import get_db
 from app.models.entities import ImpersonationPersona, Organization
 from app.models.enums import PersonaStatus, UserRole
@@ -37,6 +38,11 @@ def put_email_integration(
     db: Annotated[Session, Depends(get_db)],
     user=Depends(require_roles(UserRole.ADMIN)),
 ):
+    if is_production_environment(settings.environment) and payload.email_provider_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="SMTP is local/demo only. Configure Microsoft Graph or Google Workspace for enterprise campaigns.",
+        )
     org = db.query(Organization).filter(Organization.id == user.organization_id).first()
     update_email_integration(org, payload)
     audit_log(
@@ -68,6 +74,11 @@ def put_sms_integration(
     db: Annotated[Session, Depends(get_db)],
     user=Depends(require_roles(UserRole.ADMIN)),
 ):
+    if is_production_environment(settings.environment) and payload.sms_provider_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="SMS is disabled for the initial production launch.",
+        )
     org = db.query(Organization).filter(Organization.id == user.organization_id).first()
     update_sms_integration(org, payload)
     audit_log(

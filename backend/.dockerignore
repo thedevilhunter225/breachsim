@@ -1,0 +1,11 @@
+.env
+.git
+.pytest_cache
+.venv
+.venv-win
+__pycache__
+*.db
+*.pyc
+media_store
+tests
+requirements-dev.lock

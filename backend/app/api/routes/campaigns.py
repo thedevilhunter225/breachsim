@@ -1,18 +1,33 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session, joinedload, selectinload
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, require_roles
+from app.core.config import is_production_environment, settings
 from app.db.session import get_db
-from app.models.entities import Campaign, CampaignScenario, CampaignTarget, DeliveryAttempt, Employee, Scenario
+from app.models.entities import (
+    Campaign,
+    CampaignRun,
+    CampaignScenario,
+    CampaignTarget,
+    DeliveryAttempt,
+    Employee,
+    Scenario,
+)
 from app.models.enums import CampaignStatus, UserRole
 from app.schemas.campaigns import CampaignCreate, CampaignRead, CampaignUpdate, DeliveryAttemptRead
+from app.schemas.enterprise import CampaignRunCreate, CampaignRunRead
 from app.services.audit import audit_log
+from app.services.campaign_runs import (
+    create_campaign_run,
+    dispatch_outbox,
+    retry_failed_attempts,
+    update_run_state,
+)
 from app.services.deletion import delete_campaign
 from app.services.delivery import deliver_campaign, deliver_campaign_email, launch_campaign_sandbox
 
@@ -29,6 +44,11 @@ def serialize_attempt(attempt: DeliveryAttempt) -> DeliveryAttemptRead:
         sandbox_mode=attempt.sandbox_mode,
         preview_payload=attempt.preview_payload,
         delivered_at=attempt.delivered_at,
+        campaign_run_id=str(attempt.campaign_run_id) if attempt.campaign_run_id else None,
+        provider_message_id=attempt.provider_message_id,
+        retry_count=attempt.retry_count,
+        next_attempt_at=attempt.next_attempt_at,
+        last_error_code=attempt.last_error_code,
     )
 
 
@@ -48,6 +68,8 @@ def serialize_campaign(campaign: Campaign) -> CampaignRead:
         target_filters=campaign.target_filters,
         target_count=len(campaign.targets),
         scenario_count=len(campaign.scenario_links),
+        landing_domain_id=campaign.landing_domain_id,
+        email_connection_id=campaign.email_connection_id,
     )
 
 
@@ -82,6 +104,8 @@ def create_campaign(
         sandbox_mode=payload.sandbox_mode,
         learning_objective=payload.learning_objective,
         target_filters=payload.target_filters,
+        landing_domain_id=payload.landing_domain_id,
+        email_connection_id=payload.email_connection_id,
         status=CampaignStatus.DRAFT,
     )
     db.add(campaign)
@@ -176,10 +200,122 @@ def launch_sandbox(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db
 
 
 @router.post("/campaigns/{campaign_id}/deliver", response_model=list[DeliveryAttemptRead])
-def deliver(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER))):
+def deliver(
+    campaign_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
+):
     """Run a campaign for real on whichever channel it targets."""
+    if is_production_environment(settings.environment):
+        if not idempotency_key:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Idempotency-Key is required")
+        run = create_campaign_run(
+            db,
+            campaign_id=campaign_id,
+            actor=user,
+            idempotency_key=idempotency_key,
+        )
+        dispatch_outbox()
+        attempts = db.query(DeliveryAttempt).filter(DeliveryAttempt.campaign_run_id == run.id).all()
+        return [serialize_attempt(attempt) for attempt in attempts]
     attempts = deliver_campaign(db, campaign_id=campaign_id, actor=user)
     return [serialize_attempt(attempt) for attempt in attempts]
+
+
+@router.post("/campaigns/{campaign_id}/runs", response_model=CampaignRunRead, status_code=status.HTTP_202_ACCEPTED)
+def create_run(
+    campaign_id: uuid.UUID,
+    payload: CampaignRunCreate,
+    db: Annotated[Session, Depends(get_db)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
+):
+    run = create_campaign_run(
+        db,
+        campaign_id=campaign_id,
+        actor=user,
+        idempotency_key=idempotency_key,
+        scheduled_for=payload.scheduled_for,
+    )
+    dispatch_outbox()
+    db.expire_all()
+    return db.query(CampaignRun).filter(CampaignRun.id == run.id).one()
+
+
+@router.get("/campaigns/{campaign_id}/runs", response_model=list[CampaignRunRead])
+def list_runs(
+    campaign_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(get_current_user),
+):
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id,
+        Campaign.organization_id == user.organization_id,
+    ).first()
+    if not campaign:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    return (
+        db.query(CampaignRun)
+        .filter(CampaignRun.campaign_id == campaign.id, CampaignRun.organization_id == user.organization_id)
+        .order_by(CampaignRun.created_at.desc())
+        .all()
+    )
+
+
+def _tenant_run(db: Session, run_id: uuid.UUID, organization_id) -> CampaignRun:
+    run = db.query(CampaignRun).filter(
+        CampaignRun.id == run_id,
+        CampaignRun.organization_id == organization_id,
+    ).first()
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign run not found")
+    return run
+
+
+@router.get("/campaign-runs/{run_id}", response_model=CampaignRunRead)
+def get_run(run_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
+    return _tenant_run(db, run_id, user.organization_id)
+
+
+@router.post("/campaign-runs/{run_id}/pause", response_model=CampaignRunRead)
+def pause_run(
+    run_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
+):
+    return update_run_state(db, run=_tenant_run(db, run_id, user.organization_id), action="pause", actor=user)
+
+
+@router.post("/campaign-runs/{run_id}/resume", response_model=CampaignRunRead)
+def resume_run(
+    run_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
+):
+    run = update_run_state(db, run=_tenant_run(db, run_id, user.organization_id), action="resume", actor=user)
+    dispatch_outbox()
+    return run
+
+
+@router.post("/campaign-runs/{run_id}/cancel", response_model=CampaignRunRead)
+def cancel_run(
+    run_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
+):
+    return update_run_state(db, run=_tenant_run(db, run_id, user.organization_id), action="cancel", actor=user)
+
+
+@router.post("/campaign-runs/{run_id}/retry-failed", response_model=CampaignRunRead)
+def retry_run_failures(
+    run_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
+):
+    run = retry_failed_attempts(db, run=_tenant_run(db, run_id, user.organization_id), actor=user)
+    dispatch_outbox()
+    return run
 
 
 @router.post("/campaigns/{campaign_id}/deliver-email", response_model=list[DeliveryAttemptRead])

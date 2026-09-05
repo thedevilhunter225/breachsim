@@ -7,14 +7,14 @@ paid API key or network call.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
-import app.services.media_generation as media_generation
 import app.services.media_enrollment as media_enrollment
+import app.services.media_generation as media_generation
 from app.services.media.base import GeneratedMedia, MediaKind, VoiceEnrollment
 from tests.conftest import login
 
@@ -203,6 +203,7 @@ def test_generated_media_is_served_by_token(client: TestClient, admin_headers, m
     assert audio.status_code == 200
     assert audio.headers["content-type"] == "audio/mpeg"
     assert audio.content.startswith(b"ID3")
+    assert client.get(f"/api/v1/public/media/{state['media']['audio_token']}").status_code == 404
 
 
 def test_revocation_deletes_cloned_media_and_retires_voice(

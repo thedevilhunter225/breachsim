@@ -1,4 +1,4 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8001/api/v1";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/v1";
 
 /** Absolute URL for a public media clip served by its single-use access token. */
 export function mediaUrl(token: string): string {
@@ -14,9 +14,19 @@ export interface SessionUser {
 }
 
 export interface SessionData {
-  access_token: string;
+  // Always blank in the browser. Authentication is the HttpOnly session cookie.
+  access_token: "";
   token_type: string;
   user: SessionUser;
+}
+
+export interface OperatorAccount {
+  id: string;
+  email: string;
+  full_name: string;
+  roles: string[];
+  is_active: boolean;
+  created_at: string;
 }
 
 export interface Department {
@@ -32,6 +42,7 @@ export interface OrganizationProfile {
   timezone: string;
   retention_days: number;
   privacy_notice: string;
+  reporting_identity_mode: "pseudonymous" | "named";
 }
 
 export interface ContextProfile {
@@ -303,6 +314,8 @@ export interface Campaign {
   target_filters: Record<string, unknown>;
   target_count: number;
   scenario_count: number;
+  landing_domain_id?: string | null;
+  email_connection_id?: string | null;
 }
 
 export interface DeliveryAttempt {
@@ -314,6 +327,143 @@ export interface DeliveryAttempt {
   sandbox_mode: boolean;
   preview_payload: Record<string, any>;
   delivered_at?: string | null;
+  campaign_run_id?: string | null;
+  provider_message_id?: string | null;
+  retry_count: number;
+  next_attempt_at?: string | null;
+  last_error_code?: string | null;
+}
+
+export interface OrganizationDomain {
+  id: string;
+  hostname: string;
+  purpose: "landing" | "recipient" | "sender";
+  kind: "platform" | "custom";
+  status: "pending" | "verified" | "active" | "failed" | "deactivated";
+  dns_instructions: Record<string, string>;
+  validation_error?: string | null;
+  is_primary: boolean;
+  verified_at?: string | null;
+  deactivated_at?: string | null;
+  verification_value?: string | null;
+}
+
+export interface OrganizationBranding {
+  id: string;
+  organization_id: string;
+  logo_url?: string | null;
+  primary_color: string;
+  accent_color: string;
+  sender_name: string;
+  legal_footer: string;
+  approved_template_ids: string[];
+}
+
+export interface EnterpriseEmailConnection {
+  id: string;
+  provider: "microsoft_graph" | "google_workspace";
+  display_name: string;
+  customer_tenant_id?: string | null;
+  sender_email: string;
+  sender_name: string;
+  delegated_subject?: string | null;
+  reconciliation_secret_ref?: string | null;
+  scopes: string[];
+  status: "pending" | "healthy" | "degraded" | "revoked";
+  rate_limit_per_minute: number;
+  last_health_check_at?: string | null;
+  last_error?: string | null;
+  authorized_at?: string | null;
+  revoked_at?: string | null;
+}
+
+export interface EmailConnectionTest {
+  connection: EnterpriseEmailConnection;
+  provider_authorized: boolean;
+  sender_domain_verified: boolean;
+  spf_present: boolean;
+  dmarc_present: boolean;
+  dkim_present: boolean;
+  test_message_status?: string | null;
+}
+
+export interface GoogleDomainWideDelegationSetup {
+  connection_id: string;
+  admin_console_url: string;
+  oauth_client_id: string;
+  oauth_scope: string;
+  delegated_subject: string;
+}
+
+export interface DeliverySuppression {
+  id: string;
+  reference: string;
+  reason: "administrative" | "opt_out" | "hard_bounce" | "inactive" | "invalid_domain";
+  provider?: "microsoft_graph" | "google_workspace" | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampaignRun {
+  id: string;
+  campaign_id: string;
+  status: string;
+  scheduled_for?: string | null;
+  target_count: number;
+  queued_count: number;
+  processing_count: number;
+  accepted_count: number;
+  bounced_count: number;
+  suppressed_count: number;
+  failed_count: number;
+  unknown_count: number;
+  reporting_identity_mode: "pseudonymous" | "named";
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+}
+
+export interface ScimCredential {
+  id: string;
+  token_prefix: string;
+  description: string;
+  created_at: string;
+  last_used_at?: string | null;
+  revoked_at?: string | null;
+  token?: string | null;
+}
+
+export interface SsoConnection {
+  id: string;
+  provider: "entra" | "google";
+  issuer: string;
+  client_id: string;
+  allowed_domains: string[];
+  group_role_mappings: Record<string, string>;
+  status: string;
+}
+
+export interface PlatformOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  timezone: string;
+  reporting_identity_mode: "pseudonymous" | "named";
+  suspended_at?: string | null;
+  platform_url: string;
+  onboarding: Record<string, boolean>;
+  invite_token?: string | null;
+  invite_url?: string | null;
+  invite_expires_at?: string | null;
+}
+
+export interface InvitationAcceptance {
+  status: "accepted";
+  user_id: string;
+  login_url: string;
+  mfa_provisioning_uri: string;
+  mfa_recovery_codes: string[];
 }
 
 export interface ChannelPerformance {
@@ -456,7 +606,14 @@ export const AUTH_EXPIRED_EVENT = "breachsim.auth_expired";
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload: any = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = { detail: "The server returned an invalid response." };
+    }
+  }
   if (!response.ok) {
     if (response.status === 401 && typeof window !== "undefined") {
       window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
@@ -466,24 +623,116 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
-function authHeaders(token: string, initHeaders?: HeadersInit): HeadersInit {
+function authHeaders(_token: string, initHeaders?: HeadersInit): HeadersInit {
+  // Browser requests authenticate with the HttpOnly session cookie. `token` remains in
+  // the signature temporarily so existing components and non-browser SDK callers do
+  // not need a flag-day migration.
+  const csrf = csrfToken();
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
+    ...(csrf ? { "X-CSRF-Token": csrf } : {}),
     ...(initHeaders ?? {}),
   };
 }
 
+function csrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const name = "breachsim_csrf=";
+  const item = document.cookie.split("; ").find((entry) => entry.startsWith(name));
+  return item ? decodeURIComponent(item.slice(name.length)) : null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, { ...init, cache: "no-store" });
+  const method = (init?.method ?? "GET").toUpperCase();
+  const headers = new Headers(init?.headers);
+
+  // Read-only requests do not need CSRF protection and usually have no body. Keeping
+  // JSON/CSRF headers on GET and HEAD turns every cross-origin read into an OPTIONS
+  // preflight. Settings loads several resources together, so those needless
+  // preflights create avoidable connection pressure (and noisy transient failures in
+  // React development mode). Unsafe requests continue to send both headers.
+  if (method === "GET" || method === "HEAD") {
+    headers.delete("Content-Type");
+    headers.delete("X-CSRF-Token");
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers,
+    credentials: "include",
+    cache: "no-store",
+    signal: init?.signal ?? AbortSignal.timeout(20_000),
+  });
   return parseResponse<T>(response);
 }
 
-export function loginRequest(email: string, password: string) {
-  return request<SessionData>("/auth/login", {
+type SessionResponse = Omit<SessionData, "access_token"> & { access_token?: string | null };
+
+function browserSession(payload: SessionResponse): SessionData {
+  return { ...payload, access_token: "" };
+}
+
+export async function loginRequest(email: string, password: string, mfaCode?: string) {
+  const payload = await request<SessionResponse>("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, mfa_code: mfaCode || null }),
+  });
+  return browserSession(payload);
+}
+
+export function acceptInvitationRequest(payload: { token: string; full_name: string; password: string }) {
+  return request<InvitationAcceptance>("/invitations/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getSessionRequest() {
+  return browserSession(await request<SessionResponse>("/auth/me"));
+}
+
+export async function refreshSessionRequest() {
+  const payload = await request<SessionResponse>("/auth/refresh", {
+    method: "POST",
+    headers: authHeaders(""),
+  });
+  return browserSession(payload);
+}
+
+export function logoutRequest(token: string) {
+  return request<{ status: string }>("/auth/logout", {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+export function getOperators(token: string) {
+  return request<OperatorAccount[]>("/users", { headers: authHeaders(token) });
+}
+
+export function createOperator(token: string, payload: Record<string, unknown>) {
+  return request<OperatorAccount>("/users", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateOperator(token: string, userId: string, payload: Record<string, unknown>) {
+  return request<OperatorAccount>(`/users/${userId}`, {
+    method: "PATCH",
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function resetOperatorPassword(token: string, userId: string, newPassword: string) {
+  return request<{ status: string }>(`/users/${userId}/reset-password`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ new_password: newPassword }),
   });
 }
 
@@ -497,6 +746,159 @@ export function getRiskIntelligence(token: string) {
 
 export function getCurrentOrg(token: string) {
   return request<OrganizationProfile>("/orgs/current", { headers: authHeaders(token) });
+}
+
+export function getOrganizationDomains(token: string) {
+  return request<OrganizationDomain[]>("/orgs/current/domains", { headers: authHeaders(token) });
+}
+
+export function addOrganizationDomain(token: string, payload: { hostname: string; purpose: string }) {
+  return request<OrganizationDomain>("/orgs/current/domains", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function verifyOrganizationDomain(token: string, domainId: string) {
+  return request<OrganizationDomain>(`/orgs/current/domains/${domainId}/verify`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({}),
+  });
+}
+
+export function rotateOrganizationDomainVerification(token: string, domainId: string) {
+  return request<OrganizationDomain>(`/orgs/current/domains/${domainId}/rotate-verification`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+export function setPrimaryOrganizationDomain(token: string, domainId: string) {
+  return request<OrganizationDomain>(`/orgs/current/domains/${domainId}/set-primary`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+export function getOrganizationBranding(token: string) {
+  return request<OrganizationBranding>("/orgs/current/branding", { headers: authHeaders(token) });
+}
+
+export function updateOrganizationBranding(
+  token: string,
+  payload: Omit<OrganizationBranding, "id" | "organization_id">,
+) {
+  return request<OrganizationBranding>("/orgs/current/branding", {
+    method: "PUT",
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getEnterpriseEmailConnections(token: string) {
+  return request<EnterpriseEmailConnection[]>("/email-connections", { headers: authHeaders(token) });
+}
+
+export function createEnterpriseEmailConnection(token: string, payload: Record<string, unknown>) {
+  return request<EnterpriseEmailConnection>("/email-connections", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function checkEnterpriseEmailConnection(token: string, connectionId: string) {
+  return request<EmailConnectionTest>(`/email-connections/${connectionId}/health`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+export function testEnterpriseEmailConnection(token: string, connectionId: string) {
+  return request<EmailConnectionTest>(`/email-connections/${connectionId}/test`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+export function startMicrosoftAdminConsent(token: string, connectionId: string) {
+  return request<{ authorization_url: string }>(`/email-connections/${connectionId}/microsoft-admin-consent`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+export function getGoogleDomainWideDelegationSetup(token: string, connectionId: string) {
+  return request<GoogleDomainWideDelegationSetup>(
+    `/email-connections/${connectionId}/google-domain-wide-delegation`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export function getDeliverySuppressions(token: string) {
+  return request<DeliverySuppression[]>("/orgs/current/delivery-suppressions", {
+    headers: authHeaders(token),
+  });
+}
+
+export function createDeliverySuppression(token: string, email: string) {
+  return request<DeliverySuppression>("/orgs/current/delivery-suppressions", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ email, reason: "administrative" }),
+  });
+}
+
+export function deactivateDeliverySuppression(token: string, suppressionId: string) {
+  return request<DeliverySuppression>(`/orgs/current/delivery-suppressions/${suppressionId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+}
+
+export function getScimCredentials(token: string) {
+  return request<ScimCredential[]>("/orgs/current/scim-credentials", { headers: authHeaders(token) });
+}
+
+export function createScimCredential(token: string, description: string) {
+  return request<ScimCredential>("/orgs/current/scim-credentials", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ description }),
+  });
+}
+
+export function getSsoConnections(token: string) {
+  return request<SsoConnection[]>("/orgs/current/sso-connections", { headers: authHeaders(token) });
+}
+
+export function createSsoConnection(token: string, payload: Record<string, unknown>) {
+  return request<SsoConnection>("/orgs/current/sso-connections", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getPlatformOrganizations(token: string) {
+  return request<PlatformOrganization[]>("/platform/organizations", { headers: authHeaders(token) });
+}
+
+export function createPlatformOrganization(token: string, payload: Record<string, unknown>) {
+  return request<PlatformOrganization>("/platform/organizations", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function setPlatformOrganizationState(token: string, organizationId: string, action: "suspend" | "reactivate") {
+  return request<PlatformOrganization>(`/platform/organizations/${organizationId}/${action}`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
 }
 
 export function updateCurrentOrg(token: string, payload: Record<string, unknown>) {
@@ -683,6 +1085,25 @@ export function deliverCampaign(token: string, campaignId: string) {
   });
 }
 
+export function createCampaignRun(token: string, campaignId: string, scheduledFor?: string | null) {
+  return request<CampaignRun>(`/campaigns/${campaignId}/runs`, {
+    method: "POST",
+    headers: authHeaders(token, { "Idempotency-Key": crypto.randomUUID() }),
+    body: JSON.stringify({ scheduled_for: scheduledFor || null }),
+  });
+}
+
+export function getCampaignRuns(token: string, campaignId: string) {
+  return request<CampaignRun[]>(`/campaigns/${campaignId}/runs`, { headers: authHeaders(token) });
+}
+
+export function updateCampaignRun(token: string, runId: string, action: "pause" | "resume" | "cancel" | "retry-failed") {
+  return request<CampaignRun>(`/campaign-runs/${runId}/${action}`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
 /* ---------------------------------------------------------------- personas */
 
 export function getPersonas(token: string) {
@@ -802,7 +1223,7 @@ export function getReportableCampaigns(token: string) {
 }
 
 /**
- * Fetch an export with the bearer token attached and hand the browser a blob to save.
+ * Fetch an export with the cookie session and CSRF controls, then hand the browser a blob to save.
  * A plain anchor href cannot carry the Authorization header, so the download has to be
  * driven from script rather than markup.
  */

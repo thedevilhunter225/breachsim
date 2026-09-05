@@ -1,11 +1,12 @@
 # BreachSim
 
-**AI-driven multi-channel phishing simulation and human risk management platform.**
+**Multi-tenant enterprise security-awareness simulation and human-risk platform.**
 
-BreachSim runs governed social-engineering simulations across **five channels** — email, SMS,
-QR, voice and synthetic-media (deepfake) impersonation — tracks what employees actually do,
-scores individual and departmental human risk, assigns targeted remediation, and produces
-evidence packs an assessor can read end to end.
+The first live release supports authorized **Email and QR** campaigns. It connects to each
+customer's Microsoft 365 or Google Workspace sender, generates a unique expiring link/QR for
+every selected employee, records provider acceptance/bounces and real link opens, and produces
+pseudonymous evidence by default. Landing pages never collect passwords, MFA codes or payment
+data.
 
 > Final Year Project — Hamza Jawad, Raiya Batool, Muzna Imran
 > Department of Cyber Security, National Cyber Security Academy, Air University Islamabad
@@ -14,20 +15,13 @@ evidence packs an assessor can read end to end.
 
 ## Channels
 
-| Channel | What the target sees | Outbound? | Provider required |
-|---|---|---|---|
-| **Email phishing** | Inbox message with a tracked link | SMTP send | any SMTP account |
-| **SMS / smishing** | Text message with a tracked link | REST send | paid SMS gateway |
-| **QR phishing** | Printable poster with a tracked scan code | none | none |
-| **Voice / vishing** | Branching phone call with escalating pressure | none | none |
-| **Deepfake impersonation** | Voice note or video message from an approved persona | none | none |
+| Channel | Enterprise behavior | Delivery provider |
+|---|---|---|
+| **Email** | Branded HTML/text email with a unique approved-platform link | Microsoft Graph or Gmail API |
+| **QR** | Standards-compliant 320px+ PNG displayed inline through a non-tracking image endpoint | Microsoft Graph or Gmail API |
 
-Voice and deepfake simulations render **real cloned media** — a consented executive's voice
-(ElevenLabs) and a talking-head video from their photo (D-ID) — when a provider is configured.
-With no provider, they fall back to the in-browser Web Speech engine and still run end to end
-at zero cost. Cloning is gated by the persona consent registry, and every generated clip is
-retention-bound, token-served, and destroyed on revocation. See
-[docs/channels.md](docs/channels.md) for the full design and safety model.
+SMTP remains a local/demo adapter and is refused by the production run path. SMS, voice
+cloning and video impersonation remain disabled or sandbox-only for the initial launch.
 
 ---
 
@@ -35,41 +29,28 @@ retention-bound, token-served, and destroyed on revocation. See
 
 ```mermaid
 flowchart LR
-    A["Next.js Admin Console"] --> B["FastAPI REST API"]
-    P["Employee Portal"] --> B
-    T["Training Landing Pages"] --> B
-    V["Voice Call Simulator"] --> B
-    D["Synthetic Media Simulator"] --> B
-    B --> C["Auth + RBAC"]
-    B --> PE["Policy Engine"]
-    B --> PG["Persona Consent Registry"]
-    B --> E["Scenario Generator"]
-    B --> F["Campaign Service"]
-    B --> G["Channel Delivery Adapters"]
-    B --> H["Analytics + Risk Engine"]
-    B --> I["Audit Service"]
-    B --> J["Training Engine"]
-    B --> R["Reporting + Evidence Packs"]
-    PE --> K["PostgreSQL"]
-    PG --> K
-    E --> K
-    F --> K
-    G --> K
-    H --> K
-    I --> K
-    J --> K
-    F --> Q["Redis + RQ"]
-    Q --> G
+    FD["Azure Front Door Premium + WAF"] --> WEB["Next.js Container App"]
+    FD --> API["FastAPI Container App"]
+    API --> PG["PostgreSQL Flexible Server"]
+    API --> OUT["Transactional outbox"]
+    OUT --> SB["Service Bus Premium"]
+    SB --> WORK["KEDA delivery jobs"]
+    WORK --> GRAPH["Customer Microsoft Graph"]
+    WORK --> GMAIL["Customer Gmail API"]
+    WORK --> REDIS["Azure Managed Redis"]
+    API --> KV["Key Vault"]
+    API --> BLOB["Immutable evidence Blob"]
 ```
 
 **Stack**
 
-- **Backend** — FastAPI, SQLAlchemy 2, Alembic, PostgreSQL, Redis, RQ
+- **Backend** — FastAPI, SQLAlchemy 2, Alembic, PostgreSQL, Service Bus and Managed Redis
 - **Frontend** — Next.js App Router, TypeScript, Tailwind CSS, Recharts
-- **AI** — pluggable provider (Ollama / OpenAI / Gemini) with a deterministic rule-based
-  fallback, so the platform is fully functional with **no LLM configured**
-- **Security** — JWT auth, RBAC, field-level encryption, append-only audit log,
-  pseudonymous analytics identifiers
+- **AI** — Together AI (`openai/gpt-oss-20b`) behind a pluggable provider interface, with a
+  deterministic rule-based fallback so the platform remains functional without an API key
+- **Security** — revocable server sessions in secure cookies, CSRF protection, MFA, RBAC,
+  field-level encryption, hash-chained audit logs, tenant/hostname binding and pseudonymous
+  reporting
 
 ---
 
@@ -87,12 +68,20 @@ docker compose up --build
 | API | http://localhost:8000 |
 | API docs | http://localhost:8000/docs |
 
+This command starts the development/demo stack. For an internet-facing deployment, use the
+fail-closed production stack and runbook in
+[docs/production-deployment.md](docs/production-deployment.md); it adds HTTPS, private data
+networks, health checks, migrations, revocable sessions, rate limiting, persistent volumes,
+and a non-demo administrator bootstrap.
+
 ### Local development
 
 Backend:
 
 ```bash
 cd backend
+python -m pip install -r requirements-dev.lock
+python -m pip install --no-deps -e .
 python -m pytest -q tests
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
@@ -115,7 +104,35 @@ NEXT_PUBLIC_DEMO_MODE=true
 `NEXT_PUBLIC_DEMO_MODE=true` shows demo credentials on the login screen. Leave it unset or
 `false` for anything resembling production.
 
-### Seeded accounts
+### Together AI scenario generation
+
+For Docker Compose, place these values in the repository-root `.env`. For a backend started
+directly from `backend/`, place them in `backend/.env` or export them in the process environment:
+
+```env
+AI_PROVIDER=together
+TOGETHER_API_KEY=
+TOGETHER_MODEL=openai/gpt-oss-20b
+```
+
+Create the key in the Together AI console and paste it only into the untracked `.env`; never
+put it in a frontend `NEXT_PUBLIC_*` variable. In **Together AI → Settings → Privacy &
+Security**, choose **No** for storing prompts and training use to enable Zero Data Retention.
+The application assumes that account-level control is enabled; there is no request header
+that can enable ZDR on an account.
+
+Together receives only placeholder-based scenario context such as `{{first_name}}`,
+`{{company_name}}`, `{{department}}`, and `{{role_title}}`. Employee profiles, failure history,
+training history, and raw identifiers remain in the backend. Generated placeholders are
+replaced locally only after the response passes schema and safety validation.
+
+Use `AI_PROVIDER=rule_based` to run without Together. Timeout, rate-limit, transport, or invalid
+response failures automatically fall back to the same deterministic generator.
+
+### Seeded development accounts
+
+These accounts exist only in development when `SEED_DEMO_CONTENT=true`. Production startup
+never creates them and rejects demo seeding.
 
 | Role | Email | Password |
 |---|---|---|
@@ -153,7 +170,8 @@ for each channel so you can walk the flow on screen.
    Required for voice and deepfake only.
 4. **Directory** — import or review employees and their approved context.
 5. **Scenario Studio** — generate content for a channel; review the branching script; approve.
-6. **Campaigns** — build a campaign, take it through dual approval, deliver.
+6. **Campaigns** — select a healthy customer sender and verified landing domain, approve, then
+   launch a durable run with an idempotency key.
 7. Open the employee entry point and interact.
 8. **Command Center / Risk Intelligence** — see behaviour, risk movement and the adaptive
    retest recommendation.
@@ -172,8 +190,8 @@ warned about.
   and impersonation personas.
 - **Persona consent** — real-person impersonation requires a signed consent reference and a
   mandatory expiry. Lapsed consent auto-expires the persona and blocks every scenario using it.
-- **Recipient allowlists** — live email and SMS can only reach addresses/numbers explicitly
-  listed. A misconfigured campaign cannot reach an unintended inbox.
+- **Verified scope** — production delivery accepts only provisioned employees whose domains
+  are verified for that tenant; opt-outs and hard-bounce suppressions are enforced at launch.
 - **No credential capture** — landing pages record interaction events only. No password field
   ever stores a value.
 - **Append-only audit log** — every approval, generation, revocation and launch is recorded.
@@ -183,8 +201,9 @@ warned about.
 ## Verification
 
 ```bash
-cd backend  && python -m pytest -q tests      # 32 passed
-cd frontend && npx next build                 # 17 routes, build succeeded
+cd backend  && python -m pytest -q tests
+cd frontend && npm run lint && npm run typecheck && npm run test:coverage && npm run build
+cd infra/terraform && terraform fmt -check -recursive && terraform validate
 ```
 
 Test coverage includes the impersonation consent guardrails (expired consent, revocation,
@@ -195,36 +214,13 @@ leakage, scoring), SMS GSM-7/UCS-2 segmentation, delivery semantics, and report 
 
 ## Third-party services
 
-**Nothing in this list is required to run, demo or submit the project.** Every channel works
-without any paid account.
+Local development can run with the deterministic generator and sandbox delivery. Live
+enterprise campaigns require the customer's Microsoft 365 or Google Workspace authorization,
+verified DNS and the Azure production services. Together AI is optional technically but is
+the configured production narrative provider; its account-level ZDR setting must be confirmed.
 
-| Capability | Needed for | Cost |
-|---|---|---|
-| SMTP account | Real email delivery to your own test inbox | Free (Gmail app password) |
-| SMS gateway (Twilio-compatible) | Real SMS delivery | **Paid** — sandbox otherwise |
-| **ElevenLabs API key** | **Real cloned voice** for voice/deepfake | **Paid** — browser speech engine otherwise |
-| **D-ID API key** | **Real talking-head deepfake video** | **Paid** — abstract avatar otherwise |
-| OpenAI / Gemini API key | Higher-realism generated copy | **Paid** — rule-based generator otherwise |
-| Ollama (local) | Local AI generation | Free, self-hosted |
-
-Without a provider, a channel runs as a clearly-labelled sandbox/fallback: the full campaign,
-tracking, scoring and reporting pipeline still executes, the simulation still plays (in a
-generic voice), and the console states plainly what is degraded.
-
-### Enabling real voice/video cloning
-
-```
-VOICE_CLONE_PROVIDER=elevenlabs
-ELEVENLABS_API_KEY=sk_...
-VIDEO_CLONE_PROVIDER=did
-DID_API_KEY=...
-```
-
-Then, in **Governance → Personas**: register a persona as a **real person** with a consent
-reference, upload a short voice sample (and a face photo for video), and have a second admin
-approve it. Voice and deepfake scenarios generated against that persona now speak in the
-cloned voice and play a talking-head video. Revoking the persona deletes every generated clip
-and retires the enrolled voice at the provider.
+ElevenLabs, D-ID and SMS provider settings are retained for sandbox research only and must
+remain disabled in the initial production release.
 
 ---
 
@@ -251,6 +247,7 @@ and retires the enrolled voice at the provider.
 - [Privacy model](docs/security/privacy-model.md)
 - [Demo script](docs/demo/presentation-script.md)
 - [Foundation and phased plan](docs/foundation.md)
+- [Production deployment and operations](docs/production-deployment.md)
 
 ---
 
@@ -261,7 +258,8 @@ the simulation cannot become the attack:
 
 - No real credentials are ever captured or stored.
 - No real phone call is placed.
-- No synthetic media file is generated, retained or published.
+- Synthetic media is generated only for an explicitly consented and second-admin-approved
+  persona. It is token-served, retention-bound, audited, and deleted on revocation.
 - Impersonation is restricted to a consent-governed registry with expiry and revocation.
 - Analytics are keyed to pseudonymous identifiers, and employees can opt out or request
   redaction through the self-service portal.

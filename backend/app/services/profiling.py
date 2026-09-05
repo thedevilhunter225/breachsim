@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.models.entities import ContextProfile, Department, Employee
+from app.models.entities import ContextProfile, Employee
 from app.models.enums import Channel
 
 DEPARTMENT_THEME_MAP = {

@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 type TrainingLanding = {
   landing_type?: string;
@@ -93,6 +93,7 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [reveal, setReveal] = useState<"none" | "cta" | "report" | "submit">("none");
+  const landingVisitRecorded = useRef(false);
   const deferredEvents = useDeferredValue(events);
 
   const channel = landing.scenario?.channel ?? landing.landing_type ?? "email";
@@ -115,6 +116,8 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
   }, [channel]);
 
   useEffect(() => {
+    if (landingVisitRecorded.current) return;
+    landingVisitRecorded.current = true;
     void sendTrainingEvent(token, "visited_landing_page", { source: "landing_render", channel });
   }, [channel, token]);
 

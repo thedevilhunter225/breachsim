@@ -8,7 +8,11 @@ import {
   demoScenarios,
 } from "@/lib/demo-data";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8001/api/v1";
+const API_BASE =
+  process.env.SERVER_API_BASE_URL ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  "http://127.0.0.1:8000/api/v1";
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 async function fetchJSON<T>(path: string, fallback: T, init?: RequestInit): Promise<T> {
   try {
@@ -20,12 +24,14 @@ async function fetchJSON<T>(path: string, fallback: T, init?: RequestInit): Prom
         ...(init?.headers ?? {}),
       },
     });
-    if (!response.ok) {
+    if (!response.ok && DEMO_MODE) {
       return fallback;
     }
+    if (!response.ok) throw new Error(`BreachSim API request failed (${response.status})`);
     return (await response.json()) as T;
-  } catch {
-    return fallback;
+  } catch (error) {
+    if (DEMO_MODE) return fallback;
+    throw error;
   }
 }
 

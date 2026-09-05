@@ -6,10 +6,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_roles
+from app.api.deps import get_role_names, require_roles
 from app.db.session import get_db
-from app.models.entities import AccessLog, AuditLog, Campaign, ReportExport
+from app.models.entities import AccessLog, AuditLog, Campaign, Organization
 from app.models.enums import UserRole
+from app.services.audit import verify_audit_chain
 from app.services.reports import (
     build_audit_csv,
     build_campaign_csv,
@@ -59,6 +60,14 @@ def list_access_logs(db: Annotated[Session, Depends(get_db)], user=Depends(requi
         }
         for row in rows
     ]
+
+
+@router.get("/audit-logs/verify")
+def verify_audit_log_chain(
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.AUDITOR)),
+):
+    return verify_audit_chain(db, user.organization_id)
 
 
 @router.get("/reports/audit")
@@ -135,14 +144,29 @@ def download_campaign_report(
     user=Depends(require_roles(UserRole.ADMIN, UserRole.AUDITOR, UserRole.CAMPAIGN_MANAGER)),
 ):
     """Stream the campaign evidence pack straight to the browser."""
+    organization = db.query(Organization).filter(Organization.id == user.organization_id).one()
+    include_identities = (
+        organization.reporting_identity_mode.value == "named"
+        and UserRole.RISK_IDENTITY_VIEWER.value in get_role_names(user)
+    )
     if format.lower() == "csv":
         return _attachment(
-            build_campaign_csv(db, user.organization_id, campaign_id),
+            build_campaign_csv(
+                db,
+                user.organization_id,
+                campaign_id,
+                include_identities=include_identities,
+            ),
             media_type="text/csv; charset=utf-8",
             filename=f"breachsim-campaign-{campaign_id}.csv",
         )
     return _attachment(
-        build_campaign_html(db, user.organization_id, campaign_id),
+        build_campaign_html(
+            db,
+            user.organization_id,
+            campaign_id,
+            include_identities=include_identities,
+        ),
         media_type="text/html; charset=utf-8",
         filename=f"breachsim-campaign-{campaign_id}.html",
     )

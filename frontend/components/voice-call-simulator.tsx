@@ -78,7 +78,6 @@ export function VoiceCallSimulator({ token }: { token: string }) {
       }
       speech.speak(text, voiceProfile);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [muted, clonedAudioToken, voiceProfile],
   );
 

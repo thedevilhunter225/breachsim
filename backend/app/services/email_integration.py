@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import smtplib
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
+from html import escape
 
 from fastapi import HTTPException, status
 
@@ -68,6 +70,7 @@ def send_lab_email(
     cta_text: str = "clickhere",
     html_body: str | None = None,
     attachments: list[tuple[str, bytes, str, str]] | None = None,
+    inline_images: list[tuple[str | None, bytes, str, str, str]] | None = None,
 ) -> None:
     validate_email_delivery_setup(org)
     ensure_recipient_allowed(org, recipient)
@@ -76,18 +79,24 @@ def send_lab_email(
     message["Subject"] = subject
     message["From"] = f"{org.smtp_sender_name or 'Workflow Notifications'} <{org.smtp_from_email}>"
     message["To"] = recipient
+    message["Reply-To"] = org.smtp_from_email
+    message["Date"] = formatdate(localtime=True)
+    message["Message-ID"] = make_msgid(domain=org.smtp_from_email.rpartition("@")[2] or None)
     message.set_content(
         f"{body_text}\n\n{cta_text}: {cta_url}"
     )
+    safe_body = escape(body_text).replace(chr(10), "<br>")
+    safe_cta_url = escape(cta_url, quote=True)
+    safe_cta_text = escape(cta_text)
     message.add_alternative(
         html_body
         or f"""
         <html>
           <body style="font-family:Arial,sans-serif;color:#111827;line-height:1.55">
             <div style="max-width:640px">
-              {body_text.replace(chr(10), "<br>")}
+              {safe_body}
               <p style="margin-top:20px">
-                <a href="{cta_url}" style="color:#0f5cc0;font-weight:600">{cta_text}</a>
+                <a href="{safe_cta_url}" style="color:#0f5cc0;font-weight:600">{safe_cta_text}</a>
               </p>
             </div>
           </body>
@@ -95,6 +104,18 @@ def send_lab_email(
         """,
         subtype="html",
     )
+    html_part = message.get_body(preferencelist=("html",))
+    if html_part is not None:
+        for filename, content, maintype, subtype, content_id in inline_images or []:
+            related_headers = {
+                "maintype": maintype,
+                "subtype": subtype,
+                "cid": f"<{content_id}>",
+                "disposition": "inline",
+            }
+            if filename:
+                related_headers["filename"] = filename
+            html_part.add_related(content, **related_headers)
     for filename, content, maintype, subtype in attachments or []:
         message.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
 

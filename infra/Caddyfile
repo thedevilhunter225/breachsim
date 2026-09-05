@@ -1,0 +1,37 @@
+{
+    admin off
+}
+
+{$DOMAIN} {
+    encode zstd gzip
+    request_body {
+        max_size 30MB
+    }
+
+    log {
+        output stdout
+        format json
+    }
+
+    @backend path /api/* /health /health/*
+    handle @backend {
+        reverse_proxy backend:8000 {
+            transport http {
+                dial_timeout 5s
+                response_header_timeout 90s
+            }
+        }
+    }
+
+    handle {
+        reverse_proxy frontend:3000
+    }
+
+    header {
+        -Server
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+}

@@ -428,7 +428,7 @@ export function PoliciesConsole() {
             </div>
             <div className="sm:col-span-2">
               <label className="field-label" htmlFor="max-frequency">
-                Maximum simulations per employee
+                Maximum simulations per employee (rolling 30 days)
               </label>
               <input
                 id="max-frequency"
@@ -441,7 +441,7 @@ export function PoliciesConsole() {
                   setPolicy({ ...policy, maximum_frequency_per_employee: Number(event.target.value) })
                 }
               />
-              <p className="field-hint">Protects individuals from being repeatedly targeted.</p>
+              <p className="field-hint">Enforced at launch for live campaigns; sandbox previews do not count.</p>
             </div>
           </div>
 

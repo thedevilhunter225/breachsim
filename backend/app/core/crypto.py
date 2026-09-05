@@ -39,6 +39,22 @@ def pseudonymous_id(*parts: str) -> str:
     return hmac.new(secret, message, hashlib.sha256).hexdigest()
 
 
+def blind_index(value: str, *, namespace: str) -> str:
+    """Return a stable, tenant-independent lookup digest without exposing plaintext.
+
+    The namespace prevents the same normalized value from producing the same index in
+    unrelated columns. The application secret acts as a pepper, so a leaked database
+    cannot be attacked with an unkeyed dictionary of common email addresses.
+    """
+
+    normalized = value.strip().casefold()
+    return hmac.new(
+        settings.secret_key.encode("utf-8"),
+        f"blind-index:{namespace}:{normalized}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
 def derive_static_key(label: str) -> str:
     digest = hashlib.sha256(f"{settings.secret_key}:{label}".encode("utf-8")).digest()
     return base64.urlsafe_b64encode(digest).decode("utf-8")

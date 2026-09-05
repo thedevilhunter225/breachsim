@@ -1,0 +1,30 @@
+name_prefix     = "breachsim-prod"
+location        = "westeurope"
+secondary_location = "northeurope"
+platform_domain = "training.example.com"
+
+backend_image  = "example.azurecr.io/breachsim-api@sha256:replace-me"
+frontend_image = "example.azurecr.io/breachsim-web@sha256:replace-me"
+
+enable_platform_wildcard_domain = false
+additional_custom_domains       = []
+operations_alert_emails         = ["security-operations@example.com"]
+
+# Supply sensitive inputs through protected TF_VAR_* environment variables or
+# an encrypted CI secret store, never commit them to a tfvars file.
+# TF_VAR_postgres_admin_password
+# TF_VAR_application_secret_key
+# TF_VAR_application_encryption_key
+# TF_VAR_together_api_key
+# TF_VAR_microsoft_graph_client_secret
+# TF_VAR_google_service_account_json
+
+microsoft_graph_client_id = "replace-with-app-registration-client-id"
+
+tags = {
+  workload         = "breachsim"
+  environment      = "production"
+  data_class       = "confidential"
+  managed_by       = "terraform"
+  availability_slo = "99.9"
+}
