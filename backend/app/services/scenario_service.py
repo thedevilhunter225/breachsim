@@ -61,13 +61,13 @@ def generate_scenario(db: Session, *, request: ScenarioGenerateRequest, actor, l
     provider = llm_provider or get_default_llm_provider()
     try:
         result = provider.generate(prompt)
-    except LLMProviderError:
+    except LLMProviderError as exc:
         result = RuleBasedLLMProvider().generate(prompt)
         result["rationale_metadata"].update(
             {
                 "provider_status": "fallback",
                 "fallback_from": type(provider).__name__,
-                "fallback_reason": "Provider response was unavailable or invalid.",
+                "fallback_reason": str(exc),
             }
         )
 

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { TrendChart } from "@/components/charts";
 import { Panel } from "@/components/panel";
+import { DataState } from "@/components/data-state";
 import { StatusBadge } from "@/components/status-badge";
 import { useSession } from "@/components/session-provider";
 import {
@@ -25,11 +26,15 @@ export function RiskIntelligenceConsole() {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("");
   const [employeeReport, setEmployeeReport] = useState<EmployeeRiskReport | null>(null);
   const [employeeLoading, setEmployeeLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!session) return;
-    void loadRiskIntelligence();
-  }, [session]);
+    setLoadError(null);
+    void loadRiskIntelligence().catch(() => setLoadError("We couldn't retrieve risk insights. Check your connection and try again."));
+  }, [session, reload]);
 
   useEffect(() => {
     if (!session || !selectedEmployeeId) {
@@ -38,8 +43,10 @@ export function RiskIntelligenceConsole() {
     }
 
     setEmployeeLoading(true);
+    setReportError(null);
     void getEmployeeReport(session.access_token, selectedEmployeeId)
       .then(setEmployeeReport)
+      .catch(() => { setEmployeeReport(null); setReportError("This employee's report could not be loaded. Refresh the page to retry."); })
       .finally(() => setEmployeeLoading(false));
   }, [session, selectedEmployeeId]);
 
@@ -67,7 +74,7 @@ export function RiskIntelligenceConsole() {
   }, [riskIntel, selectedDepartmentId]);
 
   if (!riskIntel) {
-    return <Panel>Loading risk intelligence...</Panel>;
+    return <DataState label="Risk insights" error={loadError} onRetry={() => setReload((value) => value + 1)} />;
   }
 
   const noDirectory = employees.length === 0;
@@ -75,7 +82,8 @@ export function RiskIntelligenceConsole() {
 
   return (
     <>
-      <section className="app-surface rounded-xl p-5 md:p-6">
+      {reportError ? <div className="workspace-error" role="alert">{reportError}</div> : null}
+      <section className="workspace-page-header">
         <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
             <div className="section-title">Adaptive intelligence</div>

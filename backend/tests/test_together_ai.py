@@ -153,3 +153,16 @@ def test_together_rejects_invalid_structured_response():
         provider = TogetherAIProvider(api_key="test-key", client=client, sleep=lambda _delay: None)
         with pytest.raises(LLMProviderError, match="failed scenario validation"):
             provider.generate(scenario_prompt())
+
+
+def test_together_reports_when_exact_model_requires_a_dedicated_endpoint():
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={"error": {"code": "model_not_available", "message": "Internal provider wording"}},
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        provider = TogetherAIProvider(api_key="test-key", client=client, sleep=lambda _delay: None)
+        with pytest.raises(LLMProviderError, match="requires an active dedicated endpoint"):
+            provider.generate(scenario_prompt())

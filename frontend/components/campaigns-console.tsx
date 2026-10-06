@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { QrPosterPreview } from "@/components/qr-poster-preview";
 import { StatusBadge } from "@/components/status-badge";
 import { useSession } from "@/components/session-provider";
+import { DataState } from "@/components/data-state";
 import {
   approveCampaign,
   createCampaign,
@@ -81,6 +82,9 @@ export function CampaignsConsole() {
   const [domains, setDomains] = useState<OrganizationDomain[]>([]);
   const [connections, setConnections] = useState<EnterpriseEmailConnection[]>([]);
   const [runs, setRuns] = useState<CampaignRun[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
@@ -130,8 +134,10 @@ export function CampaignsConsole() {
   }, [session]);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    setLoading(true);
+    setLoadError(null);
+    void loadData().catch(() => setLoadError("We couldn't retrieve campaign records. Check your connection and try again.")).finally(() => setLoading(false));
+  }, [loadData, reload]);
 
   const channelScenarios = useMemo(
     () => scenarios.filter((scenario) => scenario.channel === form.channel),
@@ -237,15 +243,17 @@ export function CampaignsConsole() {
       (form.sandbox_mode || ((form.channel === "email" || form.channel === "qr") && liveReady)),
   );
 
+  if (loading || loadError) return <DataState label="Campaigns" error={loadError} onRetry={() => setReload((value) => value + 1)} />;
+
   return (
     <div className="space-y-4">
-      <section className="card p-5 md:p-6">
+      <section className="workspace-page-header">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="section-title">Campaign operations</div>
             <h1 className="display-font mt-1.5 text-2xl font-bold text-ink">Campaign control</h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-              Create, dual-approve and deliver simulations across email, SMS, QR, voice and synthetic media.
+              Review campaign records, approvals and delivery status. Email and QR support enterprise delivery; other channels are sandbox-only.
             </p>
           </div>
           <div className="grid grid-cols-3 gap-2.5">
@@ -272,7 +280,7 @@ export function CampaignsConsole() {
       <div className="grid gap-4 xl:grid-cols-[400px_minmax(0,1fr)]">
         {/* Composer */}
         <section className="card min-w-0 self-start overflow-hidden p-5">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/10 text-brand-500">
               <Send size={18} />
             </div>
@@ -281,7 +289,7 @@ export function CampaignsConsole() {
               <h2 className="display-font mt-0.5 text-lg font-bold text-ink">Create campaign</h2>
             </div>
 
-            <div className="rounded-xl border border-line bg-surface-muted p-4">
+            <div className="w-full rounded-xl border border-line bg-surface-muted p-4">
               <label className="flex cursor-pointer items-start gap-3">
                 <input
                   type="checkbox"

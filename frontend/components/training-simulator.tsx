@@ -2,6 +2,8 @@
 
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
+import { API_BASE } from "@/lib/client-api";
+
 type TrainingLanding = {
   landing_type?: string;
   campaign_name?: string | null;
@@ -20,7 +22,7 @@ type TrainingLanding = {
 };
 
 async function sendTrainingEvent(token: string, eventType: string, metadata: Record<string, unknown> = {}) {
-  await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8001/api/v1"}/public/training/${token}/events`, {
+  const response = await fetch(`${API_BASE}/public/training/${token}/events`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -30,6 +32,7 @@ async function sendTrainingEvent(token: string, eventType: string, metadata: Rec
       metadata,
     }),
   }).catch(() => null);
+  return response?.ok ?? false;
 }
 
 function channelLabel(channel: string) {
@@ -57,7 +60,7 @@ function channelCopy(channel: string) {
       app: "Northwind Secure Inbox",
       eyebrow: "Mobile verification",
       headline: "Action required from mobile alert",
-      intro: "A workflow alert was opened from a mobile message. Confirm the source before entering information.",
+      intro: "A workflow alert was opened from a mobile message. Confirm the source before taking action.",
       requestType: "SMS workflow alert",
       identifier: "Mobile notification",
       primaryAction: "Continue from alert",
@@ -80,7 +83,7 @@ function channelCopy(channel: string) {
     app: "Northwind WorkHub",
     eyebrow: "Secure workflow",
     headline: "Review assigned request",
-    intro: "This workflow item was opened from a message. Confirm the source before entering information.",
+    intro: "This workflow item was opened from a message. Confirm the source before taking action.",
     requestType: "Document approval",
     identifier: "Workflow reference",
     primaryAction: "Continue review",
@@ -89,10 +92,8 @@ function channelCopy(channel: string) {
 
 export function TrainingSimulator({ token, landing }: { token: string; landing: TrainingLanding }) {
   const [events, setEvents] = useState<string[]>([]);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
-  const [reveal, setReveal] = useState<"none" | "cta" | "report" | "submit">("none");
+  const [eventError, setEventError] = useState(false);
+  const [reveal, setReveal] = useState<"none" | "cta" | "report" | "submit" | "verify">("none");
   const landingVisitRecorded = useRef(false);
   const deferredEvents = useDeferredValue(events);
 
@@ -125,20 +126,24 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
     startTransition(() => {
       setEvents((current) => [`${new Date().toLocaleTimeString()}: ${label}`, ...current]);
     });
-    void sendTrainingEvent(token, eventType, metadata);
+    setEventError(false);
+    void sendTrainingEvent(token, eventType, metadata).then((recorded) => {
+      if (!recorded) setEventError(true);
+    });
   }
 
-  function submitFakeLogin() {
-    addEvent("Continued verification flow", "submitted_form_boolean", {
-      channel,
-      username_length: email.length,
-      password_length: password.length,
-      code_length: code.length,
+  function chooseToProvideDetails() {
+    addEvent("Chose to provide account details", "submitted_form_boolean", {
+      simulation_choice: "would_provide_details",
     });
-    setEmail("");
-    setPassword("");
-    setCode("");
     setReveal("submit");
+  }
+
+  function verifyIndependently() {
+    addEvent("Chose to verify independently", "verified_out_of_band", {
+      simulation_choice: "verify_independently",
+    });
+    setReveal("verify");
   }
 
   function continueReview() {
@@ -197,51 +202,25 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
               </div>
 
               <div className="mt-5 space-y-4">
-                <label className="block">
-                  <div className="mb-2 text-sm font-medium text-slate-600">Work email</div>
-                  <input
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-600"
-                    placeholder="name@company.com"
-                  />
-                </label>
-                <label className="block">
-                  <div className="mb-2 text-sm font-medium text-slate-600">Password</div>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-600"
-                    placeholder="Enter password"
-                  />
-                </label>
-                <label className="block">
-                  <div className="mb-2 text-sm font-medium text-slate-600">Verification code</div>
-                  <input
-                    value={code}
-                    onChange={(event) => setCode(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-600"
-                    placeholder="6-digit code"
-                  />
-                </label>
-
-                <div className="grid gap-3 md:grid-cols-2">
+                <p className="text-sm leading-6 text-slate-600">
+                  This request would lead to a step asking for account details. Choose how you would respond; no details are entered on this training page.
+                </p>
+                {reveal === "none" ? <div className="grid gap-3 md:grid-cols-2">
                   <button type="button" onClick={continueReview} className="rounded-xl bg-[#0f6c7d] px-4 py-3 text-sm font-semibold text-white">
                     {copy.primaryAction}
                   </button>
                   <button type="button" onClick={reportSuspicious} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900">
                     Report suspicious
                   </button>
-                </div>
+                  <button type="button" onClick={chooseToProvideDetails} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900">
+                    I would provide details
+                  </button>
+                  <button type="button" onClick={verifyIndependently} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900">
+                    Verify independently
+                  </button>
+                </div> : null}
 
-                <button type="button" onClick={submitFakeLogin} className="w-full rounded-xl bg-slate-950 px-4 py-3 font-semibold text-white">
-                  Verify and open request
-                </button>
-
-                <div className="text-xs leading-5 text-slate-400">
-                  This simulation records behavior only. Do not enter real credentials during training.
-                </div>
+                {eventError ? <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">Your choice could not be recorded. Check your connection before continuing.</div> : null}
               </div>
             </div>
           </div>
@@ -268,11 +247,11 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
           <>
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-600">Security awareness result</div>
             <h2 className="mt-4 text-2xl font-bold text-slate-950">
-              {reveal === "report" ? "Good response: you reported it" : "This was a phishing simulation"}
+              {reveal === "report" ? "Good response: you reported it" : reveal === "verify" ? "Good response: you verified independently" : "This was a phishing simulation"}
             </h2>
             <p className="mt-4 text-sm leading-7 text-slate-600">
-              {reveal === "report"
-                ? "Reporting before interacting is the safest action. The event was recorded as a positive security behavior."
+              {reveal === "report" || reveal === "verify"
+                ? "You chose a safer response. This training page records only the action you selected, never account details."
                 : landing.training_banner ?? "No real credentials were stored. Only behavior events were recorded for training."}
             </p>
             <div className="mt-5 grid gap-3">

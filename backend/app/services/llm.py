@@ -259,6 +259,14 @@ class TogetherAIProvider:
                     raise LLMProviderError(f"Together remained unavailable after retries (HTTP {response.status_code})")
 
                 if response.status_code >= 400:
+                    try:
+                        provider_error = response.json().get("error")
+                    except (ValueError, AttributeError):
+                        provider_error = None
+                    if isinstance(provider_error, dict) and provider_error.get("code") == "model_not_available":
+                        raise LLMProviderError(
+                            "The configured Together model requires an active dedicated endpoint in this account."
+                        )
                     raise LLMProviderError(f"Together rejected the request (HTTP {response.status_code})")
 
                 try:

@@ -103,6 +103,7 @@ function aiProviderLabel(metadata?: Record<string, unknown>) {
   const provider = typeof metadata?.provider === "string" ? metadata.provider : "rule-based";
   const model = typeof metadata?.model === "string" ? metadata.model : "fallback";
   if (provider === "together") return `Together AI · ${model}`;
+  if (metadata?.provider_status === "fallback") return "Built-in fallback";
   return "Built-in generator";
 }
 
@@ -276,7 +277,7 @@ export function ScenarioLabConsole() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <section className="card p-5 md:p-6">
+      <section className="workspace-page-header">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="section-title">AI content operations</div>
@@ -608,6 +609,12 @@ function ScenarioCard({
                 tone={version.validation_result?.passed ? "text-signal" : "text-caution"}
               />
             </div>
+
+            {version.rationale_metadata?.provider_status === "fallback" ? (
+              <p role="status" className="rounded-lg border border-caution/25 bg-caution/5 px-3 py-2 text-xs leading-5 text-caution">
+                The external AI provider was unavailable, so this draft used the built-in generator. {String(version.rationale_metadata.fallback_reason ?? "")}
+              </p>
+            ) : null}
 
             {scenario.detected_persuasion_triggers.length ? (
               <div className="flex flex-wrap gap-1.5">

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.services import email_integration
+import httpx
+import pytest
+from fastapi import HTTPException
+
+from app.services import email_integration, sms_integration
 
 
 def test_update_email_integration(client, admin_headers):
@@ -79,3 +83,42 @@ def test_lab_email_builds_inline_related_image(monkeypatch):
     assert inline_part.get_content_disposition() == "inline"
     assert inline_part.get_filename() is None
     assert captured["tls"] is True
+
+
+def test_twilio_lab_adapter_sends_only_to_an_allowlisted_number(monkeypatch):
+    captured: dict = {}
+
+    def fake_post(url, *, auth, data, timeout):
+        captured.update({"url": url, "auth": auth, "data": data, "timeout": timeout})
+        return httpx.Response(201, request=httpx.Request("POST", url), json={"sid": "SMsynthetic"})
+
+    monkeypatch.setattr(sms_integration.httpx, "post", fake_post)
+    org = SimpleNamespace(
+        sms_provider_enabled=True,
+        sms_provider_mode="lab",
+        sms_api_base_url="https://api.twilio.com/2010-04-01",
+        sms_account_sid="ACsynthetic",
+        sms_auth_token="test-only-token",
+        sms_from_number="+15550001111",
+        sms_recipient_allowlist=["+15550002222"],
+    )
+
+    with pytest.raises(HTTPException, match="not in the lab SMS allowlist"):
+        sms_integration.send_lab_sms(
+            org=org,
+            recipient="+15550003333",
+            body_text="Synthetic test",
+            cta_url="https://training.example.test/only-for-testing",
+        )
+    assert captured == {}
+
+    message_id = sms_integration.send_lab_sms(
+        org=org,
+        recipient="+1 (555) 000-2222",
+        body_text="Synthetic test",
+        cta_url="https://training.example.test/only-for-testing",
+    )
+    assert message_id == "SMsynthetic"
+    assert captured["url"].endswith("/Accounts/ACsynthetic/Messages.json")
+    assert captured["data"]["To"] == "+15550002222"
+    assert captured["auth"] == ("ACsynthetic", "test-only-token")

@@ -19,10 +19,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
   if (!ready || !session) {
     return (
-      <div className="page-shell flex min-h-screen items-center justify-center px-4 py-10">
-        <div className="glass shell-ring flex items-center gap-4 rounded-[2rem] px-6 py-5 shadow-card">
+      <div className="workspace-shell flex min-h-screen items-center justify-center px-4 py-10" role="status">
+        <div className="flex items-center gap-4 px-6 py-5">
           <BrandLogo compact />
-          <div className="text-sm text-slate">Loading control center...</div>
+          <div className="text-sm text-muted">Opening your workspace…</div>
         </div>
       </div>
     );

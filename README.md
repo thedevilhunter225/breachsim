@@ -129,6 +129,13 @@ replaced locally only after the response passes schema and safety validation.
 Use `AI_PROVIDER=rule_based` to run without Together. Timeout, rate-limit, transport, or invalid
 response failures automatically fall back to the same deterministic generator.
 
+If Together responds with `model_not_available`, the requested `openai/gpt-oss-20b` model
+requires an active dedicated endpoint for this account. An API key and prepaid credit alone
+do not activate it. BreachSim labels the resulting draft as a built-in fallback and shows
+the reason in Scenario Studio; it does not claim the draft came from Together. Review the
+cost in [Together Endpoints](https://api.together.ai/endpoints) before starting an endpoint.
+Keep `TOGETHER_MODEL=openai/gpt-oss-20b` unless you intentionally choose a different model.
+
 ### Seeded development accounts
 
 These accounts exist only in development when `SEED_DEMO_CONTENT=true`. Production startup

@@ -146,14 +146,14 @@ export function SettingsConsole() {
 
   return (
     <div className="space-y-4">
-      <section className="card p-5 md:p-6">
+      <section className="workspace-page-header">
         <div className="section-title">Workspace administration</div>
-        <h1 className="display-font mt-1.5 text-2xl font-bold text-ink">Organization, operators and integrations</h1>
+        <h1 className="display-font mt-1.5 text-2xl font-bold text-ink">Workspace settings</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
           Workspace identity, data retention, and the delivery providers each simulation channel uses.
         </p>
 
-        <nav className="mt-5 flex flex-wrap gap-1.5">
+        <nav className="workspace-tabs" aria-label="Settings sections">
           {TABS.filter((entry) => entry.key !== "operators" || session?.user.roles.includes("admin")).map((entry) => {
             const Icon = entry.icon;
             const active = tab === entry.key;
@@ -162,12 +162,8 @@ export function SettingsConsole() {
                 key={entry.key}
                 type="button"
                 onClick={() => setTab(entry.key)}
-                className={clsx(
-                  "inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-[0.82rem] font-semibold transition",
-                  active
-                    ? "border-brand-500 bg-brand-500/10 text-brand-600"
-                    : "border-line bg-surface text-muted hover:border-line-strong hover:text-ink",
-                )}
+                aria-pressed={active}
+                className="workspace-tab"
               >
                 <Icon size={14} />
                 {entry.label}
@@ -668,8 +664,9 @@ export function SettingsConsole() {
           </button>
 
           <Hint>
-            A paid gateway account is required for live SMS. Without one, leave the provider disabled — SMS
-            campaigns still run end-to-end in sandbox mode with a full message preview.
+            The Twilio trial only permits provided message templates. Testing custom campaign SMS text
+            needs a paid gateway account and an allowed test number. Leave the provider disabled until then;
+            sandbox previews still work. Enterprise SMS remains disabled for this release.
           </Hint>
         </section>
       ) : null}

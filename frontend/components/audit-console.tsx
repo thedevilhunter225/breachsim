@@ -5,21 +5,31 @@ import { FileDown, History } from "lucide-react";
 import Link from "next/link";
 
 import { Panel } from "@/components/panel";
+import { DataState } from "@/components/data-state";
 import { useSession } from "@/components/session-provider";
 import { AuditLog, getAuditLogs } from "@/lib/client-api";
 
 export function AuditConsole() {
   const { session } = useSession();
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!session) return;
-    void getAuditLogs(session.access_token).then(setLogs);
-  }, [session]);
+    setLoading(true);
+    setError(null);
+    void getAuditLogs(session.access_token).then(setLogs)
+      .catch(() => setError("We couldn't retrieve the audit log. Check your connection and try again."))
+      .finally(() => setLoading(false));
+  }, [session, reload]);
+
+  if (loading || error) return <DataState label="Audit log" error={error} onRetry={() => setReload((value) => value + 1)} />;
 
   return (
     <>
-      <section className="app-surface rounded-xl p-5 md:p-6">
+      <section className="workspace-page-header">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="section-title">Governance evidence</div>
@@ -33,7 +43,7 @@ export function AuditConsole() {
         </div>
       </section>
 
-      <Panel className="overflow-hidden p-0">
+      <Panel flush className="overflow-hidden">
         {logs.length ? (
           <div className="overflow-x-auto">
             <table className="data-table min-w-full text-left text-sm">

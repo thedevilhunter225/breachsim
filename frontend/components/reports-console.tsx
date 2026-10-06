@@ -75,7 +75,7 @@ export function ReportsConsole() {
 
   return (
     <div className="space-y-4">
-      <section className="card p-5 md:p-6">
+      <section className="workspace-page-header">
         <div className="section-title">Evidence center</div>
         <h1 className="display-font mt-1.5 text-2xl font-bold text-ink">Reports and exports</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">

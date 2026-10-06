@@ -48,17 +48,28 @@ export function EmployeesConsole() {
   const [reportLoadingId, setReportLoadingId] = useState<string | null>(null);
   const [composer, setComposer] = useState<"department" | "employee" | "import" | null>(null);
   const [search, setSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function loadData() {
     if (!session) return;
-    const [employeeRows, departmentRows] = await Promise.all([
-      getEmployees(session.access_token),
-      getDepartments(session.access_token),
-    ]);
-    setEmployees(employeeRows);
-    setDepartments(departmentRows);
-    if (!form.department_id && departmentRows[0]) {
-      setForm((current) => ({ ...current, department_id: departmentRows[0].id }));
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [employeeRows, departmentRows] = await Promise.all([
+        getEmployees(session.access_token),
+        getDepartments(session.access_token),
+      ]);
+      setEmployees(employeeRows);
+      setDepartments(departmentRows);
+      if (!form.department_id && departmentRows[0]) {
+        setForm((current) => ({ ...current, department_id: departmentRows[0].id }));
+      }
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load the employee directory.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -168,6 +179,7 @@ export function EmployeesConsole() {
   const hasDepartments = departments.length > 0;
   const hasEmployees = employees.length > 0;
   const filteredEmployees = employees.filter((employee) => {
+    if (departmentFilter && employee.department_id !== departmentFilter) return false;
     const query = search.trim().toLowerCase();
     if (!query) return true;
     return [employee.full_name, employee.email, employee.employee_id, employee.department_name, employee.role_title]
@@ -177,12 +189,12 @@ export function EmployeesConsole() {
 
   return (
     <>
-      <section className="app-surface rounded-xl p-5 md:p-6">
+      <section className="workspace-page-header">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="section-title">Organization directory</div>
             <h1 className="display-font mt-2 text-2xl font-semibold tracking-[-0.035em] text-ink">People and departments</h1>
-            <p className="mt-1.5 text-sm text-slate">Manage targeting context, ownership and employee risk records.</p>
+            <p className="mt-1.5 text-sm text-slate">Your people, their departments, and the support they need.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setComposer("department")} className="app-secondary-button">
@@ -197,6 +209,8 @@ export function EmployeesConsole() {
           </div>
         </div>
       </section>
+
+      {loadError ? <div className="workspace-error" role="alert"><span>{loadError}</span><button type="button" className="app-secondary-button" onClick={() => void loadData()}>Retry</button></div> : null}
 
       <section className="grid gap-3 sm:grid-cols-3">
         <DirectoryStat icon={UsersRound} label="Employees" value={employees.length} />
@@ -285,18 +299,24 @@ export function EmployeesConsole() {
           </div>
         </Panel> : null}
 
-        <Panel className="overflow-hidden p-0">
+        <Panel flush className="overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-ink/[0.08] px-5 py-4 md:flex-row md:items-center md:justify-between md:px-6">
             <div>
               <div className="text-sm font-semibold text-ink">Employee records</div>
               <div className="mt-0.5 text-xs text-slate">{filteredEmployees.length} of {employees.length} people</div>
             </div>
-            <label className="relative block w-full md:w-80">
+            <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
+            <select className="field sm:!w-44" aria-label="Filter by department" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
+              <option value="">All departments</option>
+              {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+            </select>
+            <label className="relative block w-full md:w-64">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate" />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people, roles or teams" className="h-10 w-full rounded-lg border border-ink/10 bg-white pl-9 pr-3 text-sm outline-none" />
+              <input aria-label="Search employee records" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, email or role…" className="h-10 w-full rounded-lg border border-ink/10 bg-white pl-9 pr-3 text-sm outline-none" />
             </label>
+            </div>
           </div>
-          {hasEmployees ? (
+          {hasEmployees || loading || loadError ? (
             <div className="overflow-x-auto">
               <table className="data-table min-w-full text-left text-sm">
                 <thead>
@@ -309,7 +329,7 @@ export function EmployeesConsole() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredEmployees.map((employee) => (
+                  {loading ? <tr><td colSpan={5}><div className="py-8 text-center text-muted" role="status">Loading employee records…</div></td></tr> : loadError && !hasEmployees ? <tr><td colSpan={5} className="text-center text-muted">Employee records are unavailable. Use Retry above to reload them.</td></tr> : filteredEmployees.length === 0 ? <tr><td colSpan={5}><div className="py-10 text-center"><Search size={22} className="mx-auto mb-3 text-subtle" /><p className="font-medium">No people match these filters</p><p className="mt-1 text-xs text-muted">Try another name or choose a different department.</p><button type="button" onClick={() => { setSearch(""); setDepartmentFilter(""); }} className="workspace-text-link mt-4">Clear filters</button></div></td></tr> : filteredEmployees.map((employee) => (
                     <tr key={employee.id}>
                       <td className="px-5 py-3.5 md:px-6">
                         <div className="flex items-center gap-3">

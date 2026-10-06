@@ -44,7 +44,19 @@ class TrainingEventRequest(BaseModel):
     def metadata_must_be_bounded(cls, value: dict[str, Any]) -> dict[str, Any]:
         if len(json.dumps(value, default=str).encode("utf-8")) > 4096:
             raise ValueError("metadata must be 4 KB or smaller")
-        return value
+        # Only a categorical answer can come from a public browser. Ignore legacy
+        # source/channel hints and reject all other fields before event persistence.
+        # The server resolves the channel and recipient from the opaque token.
+        unsupported = set(value) - {"source", "channel", "simulation_choice"}
+        if unsupported:
+            raise ValueError("metadata contains unsupported fields")
+        choice = value.get("simulation_choice")
+        if choice is not None and (
+            not isinstance(choice, str)
+            or choice not in {"would_provide_details", "verify_independently"}
+        ):
+            raise ValueError("simulation_choice is not supported")
+        return {"simulation_choice": choice} if choice is not None else {}
 
 
 class TrackEventRequest(TrainingEventRequest):

@@ -97,3 +97,4 @@ def test_generation_falls_back_when_provider_output_is_invalid(client, admin_hea
     assert metadata["provider"] == "rule-based"
     assert metadata["provider_status"] == "fallback"
     assert metadata["fallback_from"] == "InvalidProvider"
+    assert metadata["fallback_reason"] == "invalid provider response"

@@ -9,6 +9,7 @@ import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-sans/700.css";
 import "@fontsource-variable/jetbrains-mono";
 import "@/styles/globals.css";
+import "@/styles/workspace.css";
 import { SessionProvider } from "@/components/session-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body className="min-h-screen antialiased">
         <ThemeProvider>
           <SessionProvider>{children}</SessionProvider>

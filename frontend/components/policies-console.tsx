@@ -164,7 +164,7 @@ export function PoliciesConsole() {
 
   return (
     <div className="space-y-4">
-      <section className="card p-5 md:p-6">
+      <section className="workspace-page-header">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="section-title">Simulation governance</div>

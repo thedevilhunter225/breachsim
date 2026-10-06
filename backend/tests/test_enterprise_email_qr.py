@@ -129,6 +129,71 @@ def test_campaign_run_is_idempotent_and_preview_contains_no_recipient_pii(client
         assert "http://" not in serialized and "https://" not in serialized
 
 
+def test_email_link_tracking_records_one_click_without_claiming_an_open(client, admin_headers):
+    employee = client.get("/api/v1/employees", headers=admin_headers).json()[0]
+    employee_domain = employee["email"].rsplit("@", 1)[1]
+    _verify_domain(client, admin_headers, hostname=employee_domain, purpose="recipient")
+    _verify_domain(client, admin_headers, hostname=employee_domain, purpose="sender")
+    landing_domain = next(
+        domain
+        for domain in client.get("/api/v1/orgs/current/domains", headers=admin_headers).json()
+        if domain["purpose"] == "landing" and domain["status"] == "active"
+    )
+    sender = f"training@{employee_domain}"
+    connection_response = client.post(
+        "/api/v1/email-connections",
+        headers=admin_headers,
+        json={
+            "provider": "google_workspace",
+            "display_name": "Email tracking test",
+            "sender_email": sender,
+            "sender_name": "Security Awareness",
+            "delegated_subject": sender,
+            "rate_limit_per_minute": 120,
+        },
+    )
+    assert connection_response.status_code == 201, connection_response.text
+    connection_id = connection_response.json()["id"]
+    with SessionLocal() as db:
+        connection = db.query(EmailConnection).filter(EmailConnection.id == uuid.UUID(connection_id)).one()
+        connection.status = ConnectionStatus.HEALTHY
+        connection.authorized_at = datetime.now(timezone.utc)
+        db.commit()
+
+    _, campaign_id = _approved_campaign(
+        client,
+        admin_headers,
+        channel="email",
+        sandbox_mode=False,
+        landing_domain_id=landing_domain["id"],
+        email_connection_id=connection_id,
+    )
+    scheduled_for = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    run_response = client.post(
+        f"/api/v1/campaigns/{campaign_id}/runs",
+        headers={**admin_headers, "Idempotency-Key": f"email-track-{uuid.uuid4()}"},
+        json={"scheduled_for": scheduled_for},
+    )
+    assert run_response.status_code == 202, run_response.text
+
+    with SessionLocal() as db:
+        attempt = db.query(DeliveryAttempt).filter(
+            DeliveryAttempt.campaign_run_id == uuid.UUID(run_response.json()["id"])
+        ).one()
+        landing = db.query(LandingToken).filter(LandingToken.delivery_attempt_id == attempt.id).one()
+        link = f"/api/v1/public/l/{landing.token_public_id}.{landing.token_secret_ciphertext}"
+        landing_id = landing.id
+
+    first = client.get(link, follow_redirects=False)
+    second = client.get(link, follow_redirects=False)
+    assert first.status_code == second.status_code == 302
+    assert "/training/" in first.headers["location"]
+    with SessionLocal() as db:
+        events = db.query(EventLog).filter(EventLog.landing_token_id == landing_id).all()
+        assert sum(event.event_type == EventType.CLICKED_LINK for event in events) == 1
+        assert sum(event.event_type == EventType.OPENED_EMAIL for event in events) == 0
+
+
 def test_remote_qr_asset_decodes_and_only_destination_open_records_scan(client, admin_headers):
     employee = client.get("/api/v1/employees", headers=admin_headers).json()[0]
     employee_domain = employee["email"].rsplit("@", 1)[1]

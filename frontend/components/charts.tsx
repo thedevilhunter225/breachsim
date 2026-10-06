@@ -11,8 +11,8 @@ function chartColors(theme: ChartTheme) {
     ? {
         axis: "rgba(231, 239, 250, 0.5)",
         grid: "rgba(231, 239, 250, 0.08)",
-        area: "#4fa3ff",
-        bar: "#4fa3ff",
+        area: "#85acf0",
+        bar: "#85acf0",
         tooltipBg: "rgba(12, 25, 48, 0.96)",
         tooltipBorder: "rgba(255,255,255,0.1)",
         tooltipText: "#e7effa",
@@ -20,8 +20,8 @@ function chartColors(theme: ChartTheme) {
     : {
         axis: "#5c6c85",
         grid: "rgba(12,21,40,0.07)",
-        area: "#2b8bff",
-        bar: "#1e6fe0",
+        area: "#467acb",
+        bar: "#467acb",
         tooltipBg: "rgba(255,255,255,0.98)",
         tooltipBorder: "rgba(12,21,40,0.09)",
         tooltipText: "#0c1528",
@@ -30,10 +30,10 @@ function chartColors(theme: ChartTheme) {
 
 /** Risk bands escalate from safe to critical, so the bars should too. */
 const RISK_BAND_COLORS: Record<string, string> = {
-  "0-25": "#12a594",
-  "26-50": "#2b8bff",
-  "51-75": "#d68f0a",
-  "76-100": "#e5484d",
+  "0-25": "#408f81",
+  "26-50": "#6994d1",
+  "51-75": "#d4a85a",
+  "76-100": "#cf6e73",
 };
 
 export function TrendChart({
@@ -55,7 +55,7 @@ export function TrendChart({
         <AreaChart data={data}>
           <defs>
             <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-              <stop offset="5%" stopColor={colors.area} stopOpacity={0.42} />
+              <stop offset="5%" stopColor={colors.area} stopOpacity={0.16} />
               <stop offset="95%" stopColor={colors.area} stopOpacity={0.03} />
             </linearGradient>
           </defs>
@@ -66,14 +66,14 @@ export function TrendChart({
             contentStyle={{
               backgroundColor: colors.tooltipBg,
               borderColor: colors.tooltipBorder,
-              borderRadius: "1rem",
+              borderRadius: "0.5rem",
               color: colors.tooltipText,
-              boxShadow: "0 20px 50px rgba(0,0,0,0.18)",
+              boxShadow: "0 4px 18px rgba(0,0,0,0.08)",
             }}
             labelStyle={{ color: colors.tooltipText }}
             itemStyle={{ color: colors.tooltipText }}
           />
-          <Area type="monotone" dataKey="value" stroke={colors.area} fill={`url(#${gradientId})`} strokeWidth={3} />
+          <Area type="monotone" dataKey="value" name="Recorded value" stroke={colors.area} fill={`url(#${gradientId})`} strokeWidth={2} isAnimationActive={false} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -108,14 +108,14 @@ export function RiskBandChart({
             contentStyle={{
               backgroundColor: colors.tooltipBg,
               borderColor: colors.tooltipBorder,
-              borderRadius: "1rem",
+              borderRadius: "0.5rem",
               color: colors.tooltipText,
-              boxShadow: "0 20px 50px rgba(0,0,0,0.18)",
+              boxShadow: "0 4px 18px rgba(0,0,0,0.08)",
             }}
             labelStyle={{ color: colors.tooltipText }}
             itemStyle={{ color: colors.tooltipText }}
           />
-          <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={44} fill={colors.bar} />
+          <Bar dataKey="count" name="People" radius={[4, 4, 0, 0]} maxBarSize={44} fill={colors.bar} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
     </div>

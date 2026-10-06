@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { RiskBandChart, TrendChart } from "@/components/charts";
 import { MetricCard } from "@/components/metric-card";
+import { DataState } from "@/components/data-state";
 import { Panel } from "@/components/panel";
 import { useSession } from "@/components/session-provider";
 import { useTheme } from "@/components/theme-provider";
@@ -13,19 +14,22 @@ export function AnalyticsConsole() {
   const { session } = useSession();
   const { theme } = useTheme();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!session) return;
-    void getDashboard(session.access_token).then(setDashboard);
-  }, [session]);
+    setError(null);
+    void getDashboard(session.access_token).then(setDashboard).catch(() => setError("We couldn't retrieve analytics. Check your connection and try again."));
+  }, [session, reload]);
 
   if (!dashboard) {
-    return <Panel>Loading analytics...</Panel>;
+    return <DataState label="Analytics" error={error} onRetry={() => setReload((value) => value + 1)} />;
   }
 
   return (
     <>
-      <section className="app-surface rounded-xl p-5 md:p-6">
+      <section className="workspace-page-header">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="section-title">Performance analytics</div>
@@ -40,8 +44,8 @@ export function AnalyticsConsole() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard label="Top Vulnerable Department" value={dashboard.vulnerable_departments[0]?.department ?? "-"} tone="ember" />
-        <MetricCard label="Best Report Rate" value={`${dashboard.kpis[3]?.value}%`} tone="tide" />
-        <MetricCard label="Training Posture" value="Active" tone="moss" />
+        <MetricCard label="Overall report rate" value={`${dashboard.kpis.find((kpi) => kpi.label === "Report Rate")?.value ?? 0}%`} tone="tide" />
+        <MetricCard label="Recorded events in period" value={dashboard.trend.reduce((total, point) => total + point.value, 0)} tone="moss" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
