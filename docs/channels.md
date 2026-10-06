@@ -83,7 +83,7 @@ This keeps a simulation safe and consistent regardless of which provider is conf
 means the platform works fully with no LLM configured at all (the built-in rule-based
 generator produces every channel, including the branching scripts).
 
-The configured external provider is Together AI using `openai/gpt-oss-20b`. Requests contain
+The configured external provider is Together AI using the serverless `openai/gpt-oss-120b`. Requests contain
 only placeholders (`{{first_name}}`, `{{company_name}}`, `{{department}}`, `{{role_title}}`)
 and non-identifying scenario controls. Context profiles and employee behavior/training history
 are deliberately omitted. The validated response is personalized locally in the backend.

@@ -165,7 +165,7 @@ class TogetherAIProvider:
     def __init__(
         self,
         api_key: str,
-        model: str = "openai/gpt-oss-20b",
+        model: str = "openai/gpt-oss-120b",
         *,
         timeout_seconds: float = 45.0,
         max_retries: int = 2,
@@ -196,8 +196,9 @@ class TogetherAIProvider:
                 },
             ],
             "temperature": 0.75,
-            "max_tokens": 1200,
+            "max_tokens": 2048,
             "stream": False,
+            "reasoning": {"enabled": False},
             "context_length_exceeded_behavior": "error",
             "response_format": {
                 "type": "json_schema",
@@ -467,7 +468,10 @@ def _build_together_instructions(schema: dict) -> str:
         "Do not reference external brands, law enforcement, hospitals, threats, harassment, or real credential capture.\n"
         "Keep the initial email, SMS, or QR email realistic and business-like. Do not call the initial lure a demo or training message.\n"
         "Use platform-owned review/verification language, not real external brand impersonation.\n"
-        "For email and SMS, use cta_text exactly as clickhere unless the channel is QR or vishing.\n"
+        "Keep email subjects under 80 characters and email bodies under 120 words. Do not claim an attachment, "
+        "download, external document, or mandatory account update: no file is attached.\n"
+        "For email and SMS, use cta_text exactly as clickhere unless the channel is QR or vishing. "
+        "Never include the literal marker clickhere inside body_copy; the backend adds the action separately.\n"
         "Do not put the tracking URL in body_copy; the delivery service injects the unique link.\n"
         "The landing_page_copy must disclose that this is security awareness training and must say not to enter or reuse real credentials.\n"
         "For the vishing channel, body_copy is what the caller says to establish the pretext, and "
@@ -609,12 +613,18 @@ def _normalize_llm_result(result: dict, prompt: ScenarioPrompt, *, provider_name
     subject = _clean_generated_copy(str(result.get("subject") or result.get("title") or _email_subject(prompt)).strip(), prompt)
     title = _clean_generated_copy(str(result.get("title") or subject).strip(), prompt)
     body_copy = _clean_generated_copy(str(result.get("body_copy") or "").strip(), prompt)
+    if prompt.channel in {Channel.EMAIL, Channel.QR} and re.search(
+        r"\b(?:attached|attachment|download)\b", body_copy, flags=re.IGNORECASE
+    ):
+        raise LLMProviderError("Generated email referred to a file that the platform does not send")
+    if prompt.channel in {Channel.EMAIL, Channel.SMS}:
+        body_copy = re.sub(r"\bclickhere\b", "use the secure link below", body_copy, flags=re.IGNORECASE)
     cta_text = _clean_generated_copy(str(result.get("cta_text") or _default_cta(prompt.channel)).strip(), prompt)
     landing_page_copy = _clean_generated_copy(str(result.get("landing_page_copy") or "").strip(), prompt)
     landing_page_copy = _normalize_landing_copy(landing_page_copy, prompt)
     if prompt.channel in {Channel.EMAIL, Channel.SMS}:
         cta_text = "clickhere"
-    if prompt.channel == Channel.QR and cta_text.lower() in {"clickhere", "click here", "review securely", "open message"}:
+    if prompt.channel == Channel.QR:
         cta_text = "Scan to open"
     if prompt.channel == Channel.VISHING:
         cta_text = "Answer call"

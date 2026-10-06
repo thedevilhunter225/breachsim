@@ -43,7 +43,7 @@ PostgreSQL Flexible Server is authoritative, with zone-redundant HA, point-in-ti
 and a cross-region replica. Audit entries are hash chained; generated evidence is written to
 immutable RA-GZRS Blob storage. Key Vault and managed identities hold provider material.
 
-Together AI (`openai/gpt-oss-20b`) sits behind a provider interface. It receives only template
+Together AI (`openai/gpt-oss-120b`) sits behind a provider interface. It receives only template
 placeholders such as `{{first_name}}`, `{{company_name}}` and `{{department}}`; raw employee
 PII, performance history and complete tracking URLs never leave the backend. Responses are
 schema/safety validated and personalized locally. The deployment assumes account-level Zero

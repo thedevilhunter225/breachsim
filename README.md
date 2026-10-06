@@ -46,7 +46,7 @@ flowchart LR
 
 - **Backend** — FastAPI, SQLAlchemy 2, Alembic, PostgreSQL, Service Bus and Managed Redis
 - **Frontend** — Next.js App Router, TypeScript, Tailwind CSS, Recharts
-- **AI** — Together AI (`openai/gpt-oss-20b`) behind a pluggable provider interface, with a
+- **AI** — Together AI (`openai/gpt-oss-120b`) behind a pluggable provider interface, with a
   deterministic rule-based fallback so the platform remains functional without an API key
 - **Security** — revocable server sessions in secure cookies, CSRF protection, MFA, RBAC,
   field-level encryption, hash-chained audit logs, tenant/hostname binding and pseudonymous
@@ -112,7 +112,7 @@ directly from `backend/`, place them in `backend/.env` or export them in the pro
 ```env
 AI_PROVIDER=together
 TOGETHER_API_KEY=
-TOGETHER_MODEL=openai/gpt-oss-20b
+TOGETHER_MODEL=openai/gpt-oss-120b
 ```
 
 Create the key in the Together AI console and paste it only into the untracked `.env`; never
@@ -129,12 +129,18 @@ replaced locally only after the response passes schema and safety validation.
 Use `AI_PROVIDER=rule_based` to run without Together. Timeout, rate-limit, transport, or invalid
 response failures automatically fall back to the same deterministic generator.
 
-If Together responds with `model_not_available`, the requested `openai/gpt-oss-20b` model
-requires an active dedicated endpoint for this account. An API key and prepaid credit alone
-do not activate it. BreachSim labels the resulting draft as a built-in fallback and shows
-the reason in Scenario Studio; it does not claim the draft came from Together. Review the
-cost in [Together Endpoints](https://api.together.ai/endpoints) before starting an endpoint.
-Keep `TOGETHER_MODEL=openai/gpt-oss-20b` unless you intentionally choose a different model.
+The default `openai/gpt-oss-120b` runs on Together's serverless API and was verified with
+a synthetic, placeholder-only request. Together lists it at $0.15 per million input
+tokens and $0.60 per million output tokens; usage is billed per token rather than by
+keeping a GPU endpoint running. The larger model gave a cleaner validated email draft
+than the cheaper 9B candidate in our small synthetic comparison; this is not a broad
+quality benchmark. Check [current pricing](https://www.together.ai/pricing) before
+budgeting a large run. If a configured model is unavailable, BreachSim labels the draft
+as a built-in fallback and shows the reason in Scenario Studio.
+
+The previous `openai/gpt-oss-20b` setting returned `model_not_available` on this account
+because Together requires an active dedicated endpoint for that model. Only select it
+after reviewing endpoint cost in [Together Endpoints](https://api.together.ai/endpoints).
 
 ### Seeded development accounts
 

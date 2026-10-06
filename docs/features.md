@@ -236,7 +236,7 @@ Optional realism upgrades, none required:
 
 | Capability | Service | Without it |
 |---|---|---|
-| Higher-realism copy | Together AI (`openai/gpt-oss-20b`) | Built-in generator produces all five channels |
+| Higher-realism copy | Together AI (`openai/gpt-oss-120b`) | Built-in generator produces all five channels |
 | Real outbound calls | Telephony provider | In-browser voice simulator (the recommended path) |
 | Real email delivery | Any SMTP account (free) | Sandbox preview |
 

@@ -90,10 +90,14 @@ def test_together_request_uses_placeholders_and_personalizes_locally():
     assert "{{first_name}}" in serialized_request
     assert "{{company_name}}" in serialized_request
     assert "{{department}}" in serialized_request
-    assert captured["model"] == "openai/gpt-oss-20b"
+    assert captured["model"] == "openai/gpt-oss-120b"
+    assert captured["reasoning"] == {"enabled": False}
+    assert captured["max_tokens"] == 2048
+    assert "no file is attached" in captured["messages"][0]["content"]
+    assert "Never include the literal marker clickhere inside body_copy" in captured["messages"][0]["content"]
     assert captured["response_format"]["type"] == "json_schema"
     assert result["rationale_metadata"]["provider"] == "together"
-    assert result["rationale_metadata"]["model"] == "openai/gpt-oss-20b"
+    assert result["rationale_metadata"]["model"] == "openai/gpt-oss-120b"
     assert "Hi Amina" in result["body_copy"]
     assert "Finance queue" in result["body_copy"]
     assert result["title"] == "Northwind Financial Labs payment review"
@@ -155,7 +159,33 @@ def test_together_rejects_invalid_structured_response():
             provider.generate(scenario_prompt())
 
 
-def test_together_reports_when_exact_model_requires_a_dedicated_endpoint():
+def test_together_normalizes_cta_marker_and_rejects_nonexistent_attachment():
+    response = valid_model_result()
+    response["body_copy"] += " Please clickhere to review."
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: together_response(response))) as client:
+        result = TogetherAIProvider(api_key="test-key", client=client).generate(scenario_prompt())
+    assert "clickhere" not in result["body_copy"].lower()
+    assert "secure link below" in result["body_copy"].lower()
+    assert result["cta_text"] == "clickhere"
+
+    response["body_copy"] = "Review the attached file now."
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: together_response(response))) as client:
+        with pytest.raises(LLMProviderError, match="does not send"):
+            TogetherAIProvider(api_key="test-key", client=client).generate(scenario_prompt())
+
+
+def test_qr_scenario_uses_a_readable_action_label():
+    prompt = scenario_prompt()
+    prompt.channel = Channel.QR
+    result = valid_model_result()
+    result["cta_text"] = "scanqr"
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: together_response(result))) as client:
+        generated = TogetherAIProvider(api_key="test-key", client=client).generate(prompt)
+    assert generated["cta_text"] == "Scan to open"
+
+
+def test_together_reports_when_legacy_model_requires_a_dedicated_endpoint():
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             400,
@@ -163,6 +193,8 @@ def test_together_reports_when_exact_model_requires_a_dedicated_endpoint():
         )
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        provider = TogetherAIProvider(api_key="test-key", client=client, sleep=lambda _delay: None)
+        provider = TogetherAIProvider(
+            api_key="test-key", model="openai/gpt-oss-20b", client=client, sleep=lambda _delay: None
+        )
         with pytest.raises(LLMProviderError, match="requires an active dedicated endpoint"):
             provider.generate(scenario_prompt())

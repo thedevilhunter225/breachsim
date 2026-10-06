@@ -87,7 +87,7 @@ class Settings(BaseSettings):
     # deterministic fallback and keeps the application usable without a paid service.
     ai_provider: str = "rule_based"  # rule_based | together
     together_api_key: SecretStr | None = None
-    together_model: str = "openai/gpt-oss-20b"
+    together_model: str = "openai/gpt-oss-120b"
     together_timeout_seconds: float = 45.0
     together_max_retries: int = 2
     training_domain_placeholder: str = "training.breachsim.local"
