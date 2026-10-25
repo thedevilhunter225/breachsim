@@ -103,6 +103,18 @@ def create_organization(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Organization slug already exists")
     if db.query(User).filter(User.email == str(payload.admin_email).casefold()).first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Administrator email is already registered")
+    # An email belongs to one account, so a second pending invitation could never be accepted.
+    pending = db.query(OrganizationInvitation).filter(
+        OrganizationInvitation.email_hash == blind_index(str(payload.admin_email), namespace="user-email"),
+        OrganizationInvitation.accepted_at.is_(None),
+        OrganizationInvitation.revoked_at.is_(None),
+        OrganizationInvitation.expires_at > datetime.now(timezone.utc),
+    ).first()
+    if pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An invitation for this administrator email is already pending",
+        )
 
     org = Organization(name=payload.name, slug=payload.slug, timezone=payload.timezone)
     db.add(org)

@@ -30,12 +30,14 @@ import {
   generateScenario,
   getEmployees,
   getPersonas,
+  getPolicy,
   getScenarios,
   type ChannelPayload,
   type Employee,
   type Persona,
   type Scenario,
 } from "@/lib/client-api";
+import { canManageContent, isAdministrator } from "@/lib/roles";
 
 /* ------------------------------------------------------------------ config */
 
@@ -53,6 +55,7 @@ const CHANNELS: Array<{
   { value: "deepfake", label: "Deepfake", icon: Video, blurb: "Synthetic media impersonation of an approved persona.", requiresPersona: true },
 ];
 
+// Fallback only: the generator offers the organization's permitted themes from its policy.
 const THEMES = [
   "invoice/payment approval",
   "password reset",
@@ -126,10 +129,13 @@ function readError(error: unknown): string {
 
 export function ScenarioLabConsole() {
   const { session } = useSession();
+  const canManage = canManageContent(session);
+  const canApprove = isAdministrator(session);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [form, setForm] = useState(defaultForm);
+  const [themes, setThemes] = useState<string[]>(THEMES);
   const [notice, setNotice] = useState<{ tone: "ok" | "error" | "info"; text: string } | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -159,17 +165,21 @@ export function ScenarioLabConsole() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    const [employeeRows, scenarioRows, personaRows] = await Promise.all([
+    const [employeeRows, scenarioRows, personaRows, policy] = await Promise.all([
       getEmployees(session.access_token),
       getScenarios(session.access_token),
       getPersonas(session.access_token).catch(() => [] as Persona[]),
+      getPolicy(session.access_token).catch(() => null),
     ]);
+    const permittedThemes = policy?.allowed_themes.length ? policy.allowed_themes : THEMES;
     setEmployees(employeeRows);
     setScenarios(scenarioRows);
     setPersonas(personaRows);
+    setThemes(permittedThemes);
     setForm((current) => ({
       ...current,
       employee_id: current.employee_id || (employeeRows[0]?.id ?? ""),
+      theme: permittedThemes.includes(current.theme) ? current.theme : permittedThemes[0],
     }));
   }, [session]);
 
@@ -304,9 +314,9 @@ export function ScenarioLabConsole() {
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[400px_minmax(0,1fr)]">
+      <div className={canManage ? "grid grid-cols-1 gap-4 xl:grid-cols-[400px_minmax(0,1fr)]" : "grid grid-cols-1 gap-4"}>
         {/* Generator */}
-        <section className="card self-start p-5 xl:sticky xl:top-[86px]">
+        {canManage ? <section className="card min-w-0 self-start p-5 xl:sticky xl:top-[86px]">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/10 text-brand-500">
               <Sparkles size={18} />
@@ -320,7 +330,7 @@ export function ScenarioLabConsole() {
           {/* Channel picker */}
           <div className="mt-5">
             <span className="field-label">Channel</span>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
               {CHANNELS.map((channel) => {
                 const Icon = channel.icon;
                 const active = form.channel === channel.value;
@@ -416,7 +426,7 @@ export function ScenarioLabConsole() {
                 value={form.theme}
                 onChange={(event) => setForm({ ...form, theme: event.target.value })}
               >
-                {THEMES.map((theme) => (
+                {themes.map((theme) => (
                   <option key={theme} value={theme}>
                     {theme}
                   </option>
@@ -484,7 +494,7 @@ export function ScenarioLabConsole() {
               {isGenerating ? "Generating…" : "Generate scenario"}
             </button>
           </div>
-        </section>
+        </section> : null}
 
         {/* Library */}
         <section className="space-y-4">
@@ -501,7 +511,7 @@ export function ScenarioLabConsole() {
               <WandSparkles className="mx-auto text-subtle" size={30} />
               <p className="mt-3 text-[0.92rem] font-semibold text-ink">No scenarios yet</p>
               <p className="mx-auto mt-1.5 max-w-sm text-[0.83rem] leading-relaxed text-muted">
-                Generate your first scenario using the panel on the left.
+                {canManage ? "Generate your first scenario using the panel on the left." : "Approved scenarios will appear here."}
               </p>
             </div>
           ) : (
@@ -518,6 +528,8 @@ export function ScenarioLabConsole() {
                 onApprove={() => void handleApprove(scenario.id)}
                 onDelete={() => void handleDelete(scenario)}
                 deleting={deletingId === scenario.id}
+                canEdit={canManage}
+                canApprove={canApprove}
               />
             ))
           )}
@@ -540,6 +552,8 @@ function ScenarioCard({
   onApprove,
   onDelete,
   deleting,
+  canEdit,
+  canApprove,
 }: {
   scenario: Scenario;
   editing: boolean;
@@ -551,6 +565,8 @@ function ScenarioCard({
   onApprove: () => void;
   onDelete: () => void;
   deleting: boolean;
+  canEdit: boolean;
+  canApprove: boolean;
 }) {
   const version = scenario.latest_version;
   const meta = channelMeta(scenario.channel);
@@ -697,29 +713,33 @@ function ScenarioCard({
               </button>
             </div>
           </div>
-        ) : (
+        ) : canEdit || canApprove ? (
           <div className="flex flex-wrap items-center gap-2.5 border-t border-line pt-4">
-            <button type="button" className="btn-secondary btn-sm" onClick={onStartEdit}>
-              Edit content
-            </button>
-            {scenario.status !== "approved" ? (
+            {canEdit ? (
+              <button type="button" className="btn-secondary btn-sm" onClick={onStartEdit}>
+                Edit content
+              </button>
+            ) : null}
+            {canApprove && scenario.status !== "approved" ? (
               <button type="button" className="btn-primary btn-sm" onClick={onApprove}>
                 <CheckCircle2 size={13} />
                 Approve scenario
               </button>
             ) : null}
-            <button
-              type="button"
-              className="btn-danger btn-sm ml-auto"
-              onClick={onDelete}
-              disabled={deleting}
-              title="Delete this scenario and all its versions"
-            >
-              {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              Delete
-            </button>
+            {canEdit ? (
+              <button
+                type="button"
+                className="btn-danger btn-sm ml-auto"
+                onClick={onDelete}
+                disabled={deleting}
+                title="Delete this scenario and all its versions"
+              >
+                {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                Delete
+              </button>
+            ) : null}
           </div>
-        )}
+        ) : null}
       </div>
     </article>
   );
@@ -768,7 +788,7 @@ function InteractionScriptPreview({ payload, channel }: { payload: ChannelPayloa
                   {(step.options ?? []).map((option: Record<string, any>) => (
                     <span
                       key={option.key}
-                      className={clsx("badge", option.safe ? "badge-success" : "badge-neutral")}
+                      className={clsx("badge max-w-full !whitespace-normal text-left", option.safe ? "badge-success" : "badge-neutral")}
                     >
                       {option.label}
                     </span>

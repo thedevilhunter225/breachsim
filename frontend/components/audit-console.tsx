@@ -49,6 +49,7 @@ export function AuditConsole() {
             <table className="data-table min-w-full text-left text-sm">
               <thead>
                 <tr>
+                  <th className="px-5 py-3">Actor</th>
                   <th className="px-5 py-3">Action</th>
                   <th className="px-5 py-3">Resource</th>
                   <th className="px-5 py-3">Details</th>
@@ -58,6 +59,7 @@ export function AuditConsole() {
               <tbody>
                 {logs.map((log) => (
                   <tr key={log.id}>
+                    <td className="px-5 py-4 font-medium text-ink">{log.actor ?? "—"}</td>
                     <td className="px-5 py-4">
                       <div className="font-semibold text-ink">{log.action}</div>
                       <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate">{log.resource_type}</div>

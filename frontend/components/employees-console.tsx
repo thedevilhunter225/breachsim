@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, FileUp, Pencil, Plus, Search, ShieldAlert, UserRound, UsersRound, X, type LucideIcon } from "lucide-react";
+import { Building2, FileUp, Pencil, Plus, Search, ShieldAlert, Trash2, UserRound, UsersRound, X, type LucideIcon } from "lucide-react";
 
 import { TrendChart } from "@/components/charts";
 import { Panel } from "@/components/panel";
@@ -10,6 +10,7 @@ import { useSession } from "@/components/session-provider";
 import {
   createDepartment,
   createEmployee,
+  deleteEmployee,
   Department,
   Employee,
   EmployeeImportResult,
@@ -20,6 +21,13 @@ import {
   importEmployees,
   updateEmployee,
 } from "@/lib/client-api";
+import { canManageContent, isAdministrator } from "@/lib/roles";
+import { latestPerDay } from "@/lib/series";
+
+const CONSENT_BADGES: Record<string, { label: string; className: string }> = {
+  opted_out: { label: "Opted out", className: "bg-ember/10 text-ember" },
+  redaction_requested: { label: "Deletion requested", className: "bg-breach/8 text-breach" },
+};
 
 const emptyForm = {
   employee_id: "",
@@ -34,6 +42,8 @@ const emptyForm = {
 
 export function EmployeesConsole() {
   const { session } = useSession();
+  const canManage = canManageContent(session);
+  const canDelete = isAdministrator(session);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [form, setForm] = useState(emptyForm);
@@ -43,6 +53,7 @@ export function EmployeesConsole() {
     "employee_id,full_name,email,phone,department,role_title,approved_context_summary,consent_status\n"
   );
   const [message, setMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<EmployeeImportResult | null>(null);
   const [selectedReport, setSelectedReport] = useState<EmployeeRiskReport | null>(null);
   const [reportLoadingId, setReportLoadingId] = useState<string | null>(null);
@@ -76,6 +87,16 @@ export function EmployeesConsole() {
   useEffect(() => {
     void loadData();
   }, [session]);
+
+  // Every directory action reports a backend rejection instead of failing silently.
+  async function runAction(action: () => Promise<void>) {
+    setActionError(null);
+    try {
+      await action();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "The request could not be completed.");
+    }
+  }
 
   async function handleCreate() {
     if (!session) return;
@@ -176,6 +197,19 @@ export function EmployeesConsole() {
     setComposer(null);
   }
 
+  async function handleDelete(employee: Employee) {
+    if (!session) return;
+    const confirmed = window.confirm(
+      `Remove ${employee.full_name} and all of their exercise data? Their name is also scrubbed from generated content. This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    await deleteEmployee(session.access_token, employee.id);
+    if (selectedReport?.employee.id === employee.id) setSelectedReport(null);
+    if (editingEmployeeId === employee.id) cancelEditing();
+    setMessage(`${employee.full_name} was removed from the directory.`);
+    await loadData();
+  }
+
   const hasDepartments = departments.length > 0;
   const hasEmployees = employees.length > 0;
   const filteredEmployees = employees.filter((employee) => {
@@ -196,7 +230,7 @@ export function EmployeesConsole() {
             <h1 className="display-font mt-2 text-2xl font-semibold tracking-[-0.035em] text-ink">People and departments</h1>
             <p className="mt-1.5 text-sm text-slate">Your people, their departments, and the support they need.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          {canManage ? <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setComposer("department")} className="app-secondary-button">
               <Building2 size={15} /> New department
             </button>
@@ -206,7 +240,7 @@ export function EmployeesConsole() {
             <button type="button" onClick={() => setComposer("employee")} className="app-primary-button" disabled={!hasDepartments}>
               <Plus size={15} /> Add employee
             </button>
-          </div>
+          </div> : null}
         </div>
       </section>
 
@@ -218,8 +252,11 @@ export function EmployeesConsole() {
         <DirectoryStat icon={ShieldAlert} label="Elevated risk" value={employees.filter((employee) => employee.risk_score >= 60).length} />
       </section>
 
-      <div className={composer ? "grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]" : "grid gap-4"}>
-        {composer ? <Panel className="self-start xl:sticky xl:top-[88px] xl:max-h-[calc(100vh-112px)] xl:overflow-y-auto">
+      {actionError ? <div role="alert" className="rounded-2xl bg-breach/8 px-4 py-3 text-sm text-breach">{actionError}</div> : null}
+      {message && !actionError ? <div role="status" className="rounded-2xl bg-moss/10 px-4 py-3 text-sm text-moss">{message}</div> : null}
+
+      <div className={composer && canManage ? "grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]" : "grid gap-4"}>
+        {composer && canManage ? <Panel className="self-start xl:sticky xl:top-[88px] xl:max-h-[calc(100vh-112px)] xl:overflow-y-auto">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="section-title">Directory management</div>
@@ -233,9 +270,9 @@ export function EmployeesConsole() {
             {composer === "department" ? <div className="rounded-xl border border-ink/10 bg-white/70 p-4">
               <div className="text-sm font-semibold text-ink">Create Department</div>
               <div className="mt-3 grid gap-3">
-                <input value={departmentForm.name} onChange={(event) => setDepartmentForm({ ...departmentForm, name: event.target.value })} placeholder="Department name" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
-                <input value={departmentForm.code} onChange={(event) => setDepartmentForm({ ...departmentForm, code: event.target.value.toUpperCase() })} placeholder="Department code" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
-                <button onClick={handleCreateDepartment} className="app-primary-button">Save department</button>
+                <input value={departmentForm.name} onChange={(event) => setDepartmentForm({ ...departmentForm, name: event.target.value })} placeholder="Department name" aria-label="Department name" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <input value={departmentForm.code} onChange={(event) => setDepartmentForm({ ...departmentForm, code: event.target.value.toUpperCase() })} placeholder="Department code" aria-label="Department code" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <button onClick={() => void runAction(handleCreateDepartment)} className="app-primary-button">Save department</button>
               </div>
             </div> : null}
 
@@ -247,20 +284,20 @@ export function EmployeesConsole() {
                     Create at least one department first. Employee onboarding stays disabled until a department exists.
                   </div>
                 ) : null}
-                <input value={form.employee_id} onChange={(event) => setForm({ ...form, employee_id: event.target.value })} placeholder="Employee ID" disabled={Boolean(editingEmployeeId)} className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none disabled:bg-sand disabled:text-slate" />
-                <input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} placeholder="Full name" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
-                <input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="Email address" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
-                <input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="Phone number" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
-                <select value={form.department_id} onChange={(event) => setForm({ ...form, department_id: event.target.value })} disabled={!hasDepartments} className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none disabled:bg-sand disabled:text-slate">
+                <input value={form.employee_id} onChange={(event) => setForm({ ...form, employee_id: event.target.value })} placeholder="Employee ID" aria-label="Employee ID" disabled={Boolean(editingEmployeeId)} className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none disabled:bg-sand disabled:text-slate" />
+                <input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} placeholder="Full name" aria-label="Full name" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="Email address" aria-label="Email address" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="Phone number" aria-label="Phone number" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <select aria-label="Department" value={form.department_id} onChange={(event) => setForm({ ...form, department_id: event.target.value })} disabled={!hasDepartments} className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none disabled:bg-sand disabled:text-slate">
                   {departments.map((department) => (
                     <option key={department.id} value={department.id}>{department.name}</option>
                   ))}
                 </select>
-                <input value={form.role_title} onChange={(event) => setForm({ ...form, role_title: event.target.value })} placeholder="Role title" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
-                <textarea value={form.approved_context_summary} onChange={(event) => setForm({ ...form, approved_context_summary: event.target.value })} placeholder="Approved targeting context" className="min-h-24 rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
-                <textarea value={form.approved_public_profile_summary} onChange={(event) => setForm({ ...form, approved_public_profile_summary: event.target.value })} placeholder="Optional provided profile summary" className="min-h-20 rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <input value={form.role_title} onChange={(event) => setForm({ ...form, role_title: event.target.value })} placeholder="Role title" aria-label="Role title" className="rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <textarea value={form.approved_context_summary} onChange={(event) => setForm({ ...form, approved_context_summary: event.target.value })} placeholder="Approved targeting context" aria-label="Approved targeting context" className="min-h-24 rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
+                <textarea value={form.approved_public_profile_summary} onChange={(event) => setForm({ ...form, approved_public_profile_summary: event.target.value })} placeholder="Optional provided profile summary" aria-label="Optional provided profile summary" className="min-h-20 rounded-lg border border-ink/10 bg-white px-3 py-2.5 outline-none" />
                 <div className="flex flex-wrap gap-3">
-                  <button onClick={handleCreate} disabled={!hasDepartments} className="app-primary-button">{editingEmployeeId ? "Update employee" : "Save employee"}</button>
+                  <button onClick={() => void runAction(handleCreate)} disabled={!hasDepartments} className="app-primary-button">{editingEmployeeId ? "Update employee" : "Save employee"}</button>
                   {editingEmployeeId ? (
                     <button onClick={cancelEditing} className="app-secondary-button">Cancel</button>
                   ) : null}
@@ -276,9 +313,9 @@ export function EmployeesConsole() {
                   <input type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => void handleFileUpload(event.target.files?.[0] ?? null)} />
                 </label>
               </div>
-              <textarea value={csvText} onChange={(event) => setCsvText(event.target.value)} className="mt-3 min-h-52 w-full rounded-lg border border-ink/10 bg-white px-3 py-2.5 font-mono text-xs outline-none" />
+              <textarea aria-label="CSV rows" value={csvText} onChange={(event) => setCsvText(event.target.value)} className="mt-3 min-h-52 w-full rounded-lg border border-ink/10 bg-white px-3 py-2.5 font-mono text-xs outline-none" />
               <div className="mt-3 text-xs leading-6 text-slate">
-                Expected columns: `employee_id, full_name, email, phone, department, role_title, approved_context_summary, consent_status`
+                Expected columns: <code className="font-mono">employee_id, full_name, email, phone, department, role_title, approved_context_summary, consent_status</code>
               </div>
               {importResult ? (
                 <div className="mt-3 rounded-2xl bg-sand px-4 py-3 text-sm text-slate">
@@ -292,10 +329,9 @@ export function EmployeesConsole() {
                   ))}
                 </div>
               ) : null}
-              <button onClick={handleImport} className="app-primary-button mt-4">Import employees</button>
+              <button onClick={() => void runAction(handleImport)} className="app-primary-button mt-4">Import employees</button>
             </div> : null}
 
-            {message ? <div className="rounded-2xl bg-moss/10 px-4 py-3 text-sm text-moss">{message}</div> : null}
           </div>
         </Panel> : null}
 
@@ -343,15 +379,36 @@ export function EmployeesConsole() {
                         </div>
                       </td>
                       <td className="px-4 py-3.5 text-slate">{employee.department_name ?? "Unassigned"}</td>
-                      <td className="px-4 py-3.5"><StatusBadge value={employee.status} /></td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <StatusBadge value={employee.status} />
+                          {CONSENT_BADGES[employee.consent_status] ? (
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${CONSENT_BADGES[employee.consent_status].className}`}>
+                              {CONSENT_BADGES[employee.consent_status].label}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
                       <td className="px-4 py-3.5"><span className="font-semibold text-ink">{employee.risk_score}</span><span className="ml-1 text-xs text-slate">/100</span></td>
                       <td className="px-5 py-3.5 md:px-6">
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => startEditing(employee)} className="app-icon-button" title="Edit employee" aria-label={`Edit ${employee.full_name}`}>
-                            <Pencil size={15} />
-                          </button>
+                          {canManage ? (
+                            <button onClick={() => startEditing(employee)} className="app-icon-button" title="Edit employee" aria-label={`Edit ${employee.full_name}`}>
+                              <Pencil size={15} />
+                            </button>
+                          ) : null}
+                          {canDelete ? (
+                            <button
+                              onClick={() => void runAction(() => handleDelete(employee))}
+                              className="app-icon-button"
+                              title="Remove employee and their data"
+                              aria-label={`Remove ${employee.full_name}`}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          ) : null}
                           <button
-                            onClick={() => void loadEmployeeReport(employee.id)}
+                            onClick={() => void runAction(() => loadEmployeeReport(employee.id))}
                             className="app-secondary-button whitespace-nowrap"
                           >
                             {reportLoadingId === employee.id ? "Loading..." : "Risk profile"}
@@ -369,7 +426,7 @@ export function EmployeesConsole() {
                 <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-tide/[0.08] text-tide"><UserRound size={21} /></div>
                 <h3 className="display-font mt-4 text-xl font-semibold text-ink">Build your company directory</h3>
                 <p className="mt-2 text-sm leading-6 text-slate">Create a department, then add employees manually or import a validated CSV.</p>
-                <button type="button" onClick={() => setComposer("department")} className="app-primary-button mt-5"><Plus size={15} /> Create first department</button>
+                {canManage ? <button type="button" onClick={() => setComposer("department")} className="app-primary-button mt-5"><Plus size={15} /> Create first department</button> : null}
               </div>
             </div>
           )}
@@ -416,12 +473,7 @@ export function EmployeesConsole() {
               <div className="text-sm font-semibold text-ink">Risk Trend Over Time</div>
               <div className="mt-4">
                 {selectedReport.risk_history.length ? (
-                  <TrendChart
-                    data={selectedReport.risk_history.map((point) => ({
-                      date: point.date,
-                      value: point.score,
-                    }))}
-                  />
+                  <TrendChart data={latestPerDay(selectedReport.risk_history)} />
                 ) : (
                   <div className="rounded-2xl bg-sand px-4 py-5 text-sm text-slate">
                     No risk history has been recorded yet. Once the employee opens, clicks, submits, or completes training, the timeline appears here.

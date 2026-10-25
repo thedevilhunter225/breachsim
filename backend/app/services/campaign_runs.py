@@ -323,6 +323,8 @@ def create_campaign_run(
     queued_ids: list[str] = []
     suppressed_count = 0
     seen_employee_ids: set[uuid.UUID] = set()
+    pending_links: list[LandingToken] = []
+    pending_qr_assets: list[QrAssetToken] = []
     for target in campaign.targets:
         if target.employee_id in seen_employee_ids:
             continue
@@ -397,7 +399,7 @@ def create_campaign_run(
             landing_type=campaign.channel.value,
             expires_at=expires_at,
         )
-        db.add(landing_token)
+        pending_links.append(landing_token)
         landing_url = public_entry_url(
             hostname=landing_domain.hostname,
             channel=campaign.channel,
@@ -405,7 +407,7 @@ def create_campaign_run(
         )
         if campaign.channel == Channel.QR:
             asset_issued = issue_public_token()
-            db.add(
+            pending_qr_assets.append(
                 QrAssetToken(
                     id=uuid.uuid4(),
                     landing_token_id=landing_token.id,
@@ -417,6 +419,13 @@ def create_campaign_run(
                 )
             )
         queued_ids.append(str(attempt.id))
+
+    # Write rows parent-first. The unit of work cannot order these by itself (no relationship()
+    # links them), and PostgreSQL rejects a link that points at an attempt not yet inserted.
+    db.flush()
+    db.add_all(pending_links)
+    db.flush()
+    db.add_all(pending_qr_assets)
 
     run.queued_count = len(queued_ids)
     run.suppressed_count = suppressed_count

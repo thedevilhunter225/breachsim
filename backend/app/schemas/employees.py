@@ -102,7 +102,9 @@ class EmployeeImportRecord(BaseModel):
 
 
 class EmployeeImportPayload(BaseModel):
-    rows: list[EmployeeImportRecord]
+    # Rows are validated one at a time by the import route so a single malformed row is
+    # reported against its row number instead of rejecting the whole file.
+    rows: list[dict[str, Any]]
 
 
 class EmployeeImportResult(BaseModel):

@@ -1,6 +1,7 @@
 "use client";
 
 import { Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -170,6 +171,23 @@ export default function LoginPage() {
         <p className="mt-6 text-center text-[0.68rem] leading-5 text-[#98a2b3]">
           Authorized operators only · Access activity is recorded
         </p>
+        <nav aria-label="Legal" className="mt-1.5 flex items-center justify-center gap-2 text-[0.68rem] leading-5">
+          <Link href="/legal/privacy" className="text-[#667085] underline-offset-2 transition hover:text-[#174f88] hover:underline">
+            Privacy
+          </Link>
+          <span aria-hidden="true" className="text-[#c4cad4]">
+            ·
+          </span>
+          <Link href="/legal/terms" className="text-[#667085] underline-offset-2 transition hover:text-[#174f88] hover:underline">
+            Terms
+          </Link>
+          <span aria-hidden="true" className="text-[#c4cad4]">
+            ·
+          </span>
+          <Link href="/legal" className="text-[#667085] underline-offset-2 transition hover:text-[#174f88] hover:underline">
+            Legal
+          </Link>
+        </nav>
       </div>
     </main>
   );

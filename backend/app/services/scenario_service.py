@@ -29,7 +29,13 @@ def generate_scenario(db: Session, *, request: ScenarioGenerateRequest, actor, l
 
     organization = db.query(Organization).filter(Organization.id == actor.organization_id).first()
     policy = get_or_create_policy(db, actor.organization_id)
-    validation = validate_generation_request(policy, channel=request.channel, theme=request.theme, difficulty_level=request.difficulty_level)
+    validation = validate_generation_request(
+        policy,
+        channel=request.channel,
+        theme=request.theme,
+        difficulty_level=request.difficulty_level,
+        instructions=request.prompt_instructions,
+    )
     if not validation.passed:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"errors": validation.errors})
 
@@ -201,6 +207,21 @@ def create_scenario_version(db: Session, *, scenario: Scenario, edit: ScenarioEd
 
 
 def approve_scenario(db: Session, *, scenario: Scenario, actor) -> Scenario:
+    policy = get_or_create_policy(db, actor.organization_id)
+    if policy.second_approval_required:
+        # Two-person rule: whoever generated the scenario or wrote its current version
+        # cannot also approve it. Organizations with a single administrator can switch the
+        # rule off under Governance -> Controls.
+        latest = max(scenario.versions, key=lambda version: version.version_number) if scenario.versions else None
+        authors = {scenario.created_by_user_id, latest.created_by_user_id if latest else None}
+        if actor.id in authors:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Scenarios require review by a second administrator. "
+                    "The person who generated or last edited this scenario cannot approve it."
+                ),
+            )
     scenario.status = ScenarioStatus.APPROVED
     scenario.approved_by_user_id = actor.id
     scenario.approved_at = datetime.now(timezone.utc)

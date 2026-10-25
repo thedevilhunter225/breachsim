@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "breachsim-backend",
+      "runtimeExecutable": "E:/fyp/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8765"],
+      "cwd": "backend",
+      "port": 8765
+    },
+    {
       "name": "breachsim-frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],

@@ -37,19 +37,19 @@ const CHANNEL_CATALOGUE: Array<{
     value: "email",
     label: "Email",
     icon: Mail,
-    description: "Inbox lure with a tracked link. Sends only to allowlisted mailboxes.",
+    description: "Email with a unique, expiring training link, sent from your Microsoft 365 or Google Workspace sender to verified recipient domains.",
   },
   {
     value: "sms",
     label: "SMS / smishing",
     icon: MessageSquare,
-    description: "Text message to an allowlisted number via the configured gateway.",
+    description: "Sandbox only for the initial launch. A local demo adapter can text up to four allowlisted test numbers.",
   },
   {
     value: "qr",
     label: "QR",
     icon: QrCode,
-    description: "Printable poster with a tracked scan code. Nothing is sent outbound.",
+    description: "Email with an embedded, uniquely tracked QR code, sent through the same verified sender as email.",
   },
   {
     value: "vishing",
@@ -62,7 +62,7 @@ const CHANNEL_CATALOGUE: Array<{
     value: "deepfake",
     label: "Synthetic media",
     icon: Video,
-    description: "Impersonation simulation using an approved persona. No media file is stored.",
+    description: "Impersonation simulation using an approved, consented persona. Any generated clip is retention-limited and deleted when consent is revoked.",
     sensitive: "Requires an approved, in-consent persona and the organization-level switch.",
   },
 ];

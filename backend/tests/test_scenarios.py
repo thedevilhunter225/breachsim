@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.services.llm import LLMProviderError
 
 
-def test_generate_and_approve_scenario(client, admin_headers):
+def test_generate_and_approve_scenario(client, admin_headers, reviewer_headers):
     employee_id = client.get("/api/v1/employees", headers=admin_headers).json()[0]["id"]
     generate_response = client.post(
         "/api/v1/scenarios/generate",
@@ -18,7 +18,10 @@ def test_generate_and_approve_scenario(client, admin_headers):
     assert generate_response.status_code == 201, generate_response.text
     scenario_id = generate_response.json()["id"]
 
-    approve_response = client.post(f"/api/v1/scenarios/{scenario_id}/approve", headers=admin_headers)
+    self_approval = client.post(f"/api/v1/scenarios/{scenario_id}/approve", headers=admin_headers)
+    assert self_approval.status_code == 403, "the generating admin must not approve their own scenario"
+
+    approve_response = client.post(f"/api/v1/scenarios/{scenario_id}/approve", headers=reviewer_headers)
     assert approve_response.status_code == 200
     assert approve_response.json()["status"] == "approved"
 
@@ -98,3 +101,21 @@ def test_generation_falls_back_when_provider_output_is_invalid(client, admin_hea
     assert metadata["provider_status"] == "fallback"
     assert metadata["fallback_from"] == "InvalidProvider"
     assert metadata["fallback_reason"] == "invalid provider response"
+
+
+def test_policy_blocks_prohibited_words_in_prompt_instructions(client, admin_headers):
+    employee_id = client.get("/api/v1/employees", headers=admin_headers).json()[0]["id"]
+    response = client.post(
+        "/api/v1/scenarios/generate",
+        headers=admin_headers,
+        json={
+            "employee_id": employee_id,
+            "channel": "email",
+            "theme": "invoice/payment approval",
+            "difficulty_level": "medium",
+            "prompt_instructions": "Pretend to be the police and threaten arrest.",
+        },
+    )
+    assert response.status_code == 400
+    errors = response.json()["detail"]["errors"]
+    assert any("police" in error for error in errors)

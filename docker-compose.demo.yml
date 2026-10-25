@@ -1,0 +1,205 @@
+# Public demo / pilot deployment — internet-facing, HTTPS on your own domain, NO Azure.
+#
+# This is the pragmatic "host it online for testing" stack. It runs the real application
+# code (FastAPI + Next.js + PostgreSQL + Redis + the durable transactional outbox delivery
+# pipeline) behind Caddy, which gets a free Let's Encrypt certificate for ${DOMAIN}
+# automatically. Public campaign/landing/QR links resolve over HTTPS on your domain.
+#
+# It deliberately runs with ENVIRONMENT=development so it does NOT trigger the fail-closed
+# production check (validate_production_settings in backend/app/core/config.py), which would
+# demand Azure Service Bus, Key Vault, Blob storage and Front Door. Every security-relevant
+# value is still set to a production-grade setting here (strong secrets, HTTPS everywhere,
+# secure cookies, locked TRUSTED_HOSTS/CORS, API docs off). In dev mode the backend creates
+# its schema and the four default operator accounts on first startup — no migration or
+# bootstrap job is required.
+#
+# For the real 50,000-recipient enterprise architecture (Azure Front Door, Service Bus,
+# Key Vault, immutable Blob evidence), use docker-compose.production.yml / infra/terraform
+# and docs/production-deployment.md instead.
+#
+# Every ${VAR} comes from .env.demo (template: .env.demo.example):
+#   docker compose --env-file .env.demo -f docker-compose.demo.yml up -d --build
+name: breachsim-demo
+
+x-backend-environment: &backend-environment
+  # Development mode on purpose: keeps the Azure-only production gate from firing while we
+  # still apply every production-grade setting below.
+  ENVIRONMENT: development
+  DATABASE_URL: postgresql+psycopg://breachsim:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/breachsim
+  REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+  # Public identity of this instance. Links in training content and QR payloads are built
+  # from these, so they must be your real public HTTPS domain.
+  FRONTEND_BASE_URL: https://${DOMAIN:?set DOMAIN}
+  PUBLIC_URL_SCHEME: https
+  PLATFORM_TRAINING_DOMAIN: ${DOMAIN}
+  CORS_ORIGINS: '["https://${DOMAIN}"]'
+  # Production rejects loopback/test hostnames; the backend healthcheck sends Host: backend.
+  TRUSTED_HOSTS: '["${DOMAIN}","backend"]'
+  SESSION_COOKIE_SECURE: "true"
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+  API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
+  LOG_JSON: "true"
+  # The four operator accounts (admin/manager/auditor/reviewer) are always created on first
+  # startup. SEED_DEMO_CONTENT=true additionally seeds a sample employee directory so you
+  # have people to run a campaign against immediately.
+  SEED_DEMO_CONTENT: ${SEED_DEMO_CONTENT:-true}
+  # In-database durable transactional outbox: campaign launch records outbox events and the
+  # dispatcher delivers them. This exercises the real delivery pipeline without Azure.
+  EMAIL_DELIVERY_BACKEND: database
+  # Narrative generation. rule_based runs free with the deterministic generator; set together
+  # (and TOGETHER_API_KEY) in .env.demo for real LLM-generated scenarios.
+  AI_PROVIDER: ${AI_PROVIDER:-rule_based}
+  TOGETHER_API_KEY: ${TOGETHER_API_KEY:-}
+  TOGETHER_MODEL: ${TOGETHER_MODEL:-openai/gpt-oss-120b}
+  # Lab adapters and synthetic media stay off for a public demo.
+  LAB_EMAIL_PROVIDER_ENABLED: ${LAB_EMAIL_PROVIDER_ENABLED:-false}
+  LAB_SMS_PROVIDER_ENABLED: "false"
+  SYNTHETIC_MEDIA_PRODUCTION_APPROVED: "false"
+  VOICE_CLONE_PROVIDER: none
+  VIDEO_CLONE_PROVIDER: none
+  MEDIA_STORAGE_DIR: /data/media
+  REPORT_EXPORT_DIR: /data/reports
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: breachsim
+      POSTGRES_USER: breachsim
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U breachsim -d breachsim"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [data]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [data]
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment: *backend-environment
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "2",
+        "--proxy-headers",
+        "--forwarded-allow-ips",
+        "*",
+      ]
+    healthcheck:
+      # The image's default probe sends Host: 127.0.0.1, which TRUSTED_HOSTS rejects; send
+      # Host: backend, which is allow-listed. /health/ready also checks the DB and Redis.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as r; r.urlopen(r.Request('http://127.0.0.1:8000/health/ready', headers={'Host': 'backend'}), timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 5
+    volumes:
+      - media_data:/data/media
+      - report_data:/data/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [edge, data]
+
+  # Drains the durable outbox for any events scheduled for later delivery (immediate sends
+  # are dispatched inline by the API on launch). Mirrors Terraform's scheduled dispatcher.
+  outbox-dispatcher:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    init: true
+    environment: *backend-environment
+    command: ["sh", "-c", "while true; do python -m app.workers.outbox_dispatcher; sleep 60; done"]
+    healthcheck:
+      disable: true
+    volumes:
+      - media_data:/data/media
+      - report_data:/data/reports
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [edge, data]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Same-origin API calls from the browser go through Caddy to the backend.
+        NEXT_PUBLIC_API_BASE_URL: /api/v1
+        NEXT_PUBLIC_DEMO_MODE: ${NEXT_PUBLIC_DEMO_MODE:-false}
+    restart: unless-stopped
+    environment:
+      # Server-side rendering talks to the backend directly over the internal network.
+      SERVER_API_BASE_URL: http://backend:8000/api/v1
+      NEXT_PUBLIC_DEMO_MODE: ${NEXT_PUBLIC_DEMO_MODE:-false}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [edge]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infra/Caddyfile.demo:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    networks: [edge]
+
+networks:
+  edge:
+  data:
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:
+  report_data:
+  caddy_data:
+  caddy_config:

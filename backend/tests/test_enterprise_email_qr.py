@@ -29,6 +29,7 @@ from app.models.entities import (
     QrAssetToken,
 )
 from app.models.enums import ConnectionStatus, DeliveryStatus, EventType
+from tests.conftest import login
 
 
 def _approved_campaign(
@@ -53,7 +54,8 @@ def _approved_campaign(
     )
     assert scenario_response.status_code == 201, scenario_response.text
     scenario_id = scenario_response.json()["id"]
-    assert client.post(f"/api/v1/scenarios/{scenario_id}/approve", headers=admin_headers).status_code == 200
+    reviewer = login(client, "reviewer@breachsim-lab.com", "Reviewer123!")  # two-person rule
+    assert client.post(f"/api/v1/scenarios/{scenario_id}/approve", headers=reviewer).status_code == 200
 
     response = client.post(
         "/api/v1/campaigns",
@@ -184,10 +186,22 @@ def test_email_link_tracking_records_one_click_without_claiming_an_open(client, 
         link = f"/api/v1/public/l/{landing.token_public_id}.{landing.token_secret_ciphertext}"
         landing_id = landing.id
 
+    page_click_before_redirect = client.post(
+        f"/api/v1/public/training/{link.rsplit('/', 1)[-1]}/events", json={"event_type": "clicked_link"}
+    )
+    assert page_click_before_redirect.status_code == 422, "a browser cannot claim a click the server never saw"
+
     first = client.get(link, follow_redirects=False)
     second = client.get(link, follow_redirects=False)
     assert first.status_code == second.status_code == 302
     assert "/training/" in first.headers["location"]
+
+    # The landing page's own "continue" click is accepted as a duplicate of the redirect.
+    page_click = client.post(
+        f"/api/v1/public/training/{link.rsplit('/', 1)[-1]}/events", json={"event_type": "clicked_link"}
+    )
+    assert page_click.status_code == 200, page_click.text
+    assert page_click.json()["duplicate"] is True
     with SessionLocal() as db:
         events = db.query(EventLog).filter(EventLog.landing_token_id == landing_id).all()
         assert sum(event.event_type == EventType.CLICKED_LINK for event in events) == 1

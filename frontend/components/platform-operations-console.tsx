@@ -10,9 +10,11 @@ import {
   setPlatformOrganizationState,
   type PlatformOrganization,
 } from "@/lib/client-api";
+import { hasAnyRole } from "@/lib/roles";
 
 export function PlatformOperationsConsole() {
   const { session } = useSession();
+  const isPlatformOperator = hasAnyRole(session, ["platform_operator"]);
   const [organizations, setOrganizations] = useState<PlatformOrganization[]>([]);
   const [form, setForm] = useState({ name: "", slug: "", timezone: "UTC", admin_email: "", admin_name: "" });
   const [invite, setInvite] = useState<string | null>(null);
@@ -20,9 +22,9 @@ export function PlatformOperationsConsole() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!session) return;
+    if (!session || !isPlatformOperator) return;
     setOrganizations(await getPlatformOrganizations(session.access_token));
-  }, [session]);
+  }, [session, isPlatformOperator]);
 
   useEffect(() => {
     void load().catch((error) => setNotice(error instanceof Error ? error.message : "Unable to load organizations"));
@@ -38,6 +40,18 @@ export function PlatformOperationsConsole() {
     } finally {
       setBusy(null);
     }
+  }
+
+  if (session && !isPlatformOperator) {
+    return (
+      <section className="workspace-page-header">
+        <div className="section-title">Platform operations</div>
+        <h1 className="display-font mt-1.5 text-2xl font-bold text-ink">Not available for this account</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+          Tenant provisioning is limited to BreachSim platform operators. Workspace settings are under Settings.
+        </p>
+      </section>
+    );
   }
 
   return (

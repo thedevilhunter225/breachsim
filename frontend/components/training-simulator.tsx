@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_BASE } from "@/lib/client-api";
@@ -19,9 +20,22 @@ type TrainingLanding = {
     triggers?: string[];
   };
   preview_payload?: Record<string, unknown>;
+  recorded_decision?: { event_type: string; occurred_at: string } | null;
 };
 
-async function sendTrainingEvent(token: string, eventType: string, metadata: Record<string, unknown> = {}) {
+type Reveal = "none" | "cta" | "report" | "submit" | "verify";
+
+/** The result shown for an answer the server already recorded for this link. */
+export function revealForDecision(eventType: string | undefined): Reveal {
+  if (eventType === "submitted_form_boolean") return "submit";
+  if (eventType === "clicked_report" || eventType === "marked_spam") return "report";
+  if (eventType === "verified_out_of_band") return "verify";
+  return "none";
+}
+
+type EventOutcome = { recorded: boolean; alreadyAnswered?: string };
+
+async function sendTrainingEvent(token: string, eventType: string, metadata: Record<string, unknown> = {}): Promise<EventOutcome> {
   const response = await fetch(`${API_BASE}/public/training/${token}/events`, {
     method: "POST",
     headers: {
@@ -32,8 +46,15 @@ async function sendTrainingEvent(token: string, eventType: string, metadata: Rec
       metadata,
     }),
   }).catch(() => null);
-  return response?.ok ?? false;
+  if (response?.status === 409) {
+    // Only the first answer on a link counts; show the result for the one on record.
+    const payload = await response.json().catch(() => null);
+    return { recorded: true, alreadyAnswered: payload?.detail?.recorded_decision?.event_type };
+  }
+  return { recorded: response?.ok ?? false };
 }
+
+const CONTINUED_KEY = (token: string) => `breachsim.continued.${token}`;
 
 function channelLabel(channel: string) {
   if (channel === "qr") return "QR";
@@ -91,9 +112,12 @@ function channelCopy(channel: string) {
 }
 
 export function TrainingSimulator({ token, landing }: { token: string; landing: TrainingLanding }) {
-  const [events, setEvents] = useState<string[]>([]);
+  const recordedAt = landing.recorded_decision?.occurred_at;
+  const [events, setEvents] = useState<string[]>(() =>
+    recordedAt ? [`${new Date(recordedAt).toLocaleString()}: Response recorded`] : [],
+  );
   const [eventError, setEventError] = useState(false);
-  const [reveal, setReveal] = useState<"none" | "cta" | "report" | "submit" | "verify">("none");
+  const [reveal, setReveal] = useState<Reveal>(() => revealForDecision(landing.recorded_decision?.event_type));
   const landingVisitRecorded = useRef(false);
   const deferredEvents = useDeferredValue(events);
 
@@ -120,6 +144,14 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
     if (landingVisitRecorded.current) return;
     landingVisitRecorded.current = true;
     void sendTrainingEvent(token, "visited_landing_page", { source: "landing_render", channel });
+    try {
+      // "Continue" is not a recorded answer, so remember it for a reload in this tab.
+      if (window.sessionStorage.getItem(CONTINUED_KEY(token))) {
+        setReveal((current) => (current === "none" ? "cta" : current));
+      }
+    } catch {
+      // Storage can be unavailable (private mode); the page still works without it.
+    }
   }, [channel, token]);
 
   function addEvent(label: string, eventType: string, metadata: Record<string, unknown> = {}) {
@@ -127,8 +159,10 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
       setEvents((current) => [`${new Date().toLocaleTimeString()}: ${label}`, ...current]);
     });
     setEventError(false);
-    void sendTrainingEvent(token, eventType, metadata).then((recorded) => {
-      if (!recorded) setEventError(true);
+    void sendTrainingEvent(token, eventType, metadata).then((outcome) => {
+      if (!outcome.recorded) setEventError(true);
+      const earlier = revealForDecision(outcome.alreadyAnswered);
+      if (earlier !== "none") setReveal(earlier);
     });
   }
 
@@ -148,6 +182,11 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
 
   function continueReview() {
     addEvent("Clicked primary action", "clicked_link", { channel });
+    try {
+      window.sessionStorage.setItem(CONTINUED_KEY(token), "1");
+    } catch {
+      // Storage can be unavailable (private mode); the page still works without it.
+    }
     setReveal("cta");
   }
 
@@ -260,6 +299,14 @@ export function TrainingSimulator({ token, landing }: { token: string; landing: 
                   {indicator}
                 </div>
               ))}
+            </div>
+            <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-[#0f6c7d]">
+              <Link href={`/employee-portal#t=${encodeURIComponent(token)}`} className="underline underline-offset-2">
+                Your training and privacy options
+              </Link>
+              <Link href="/legal/privacy" className="underline underline-offset-2">
+                Privacy notice
+              </Link>
             </div>
           </>
         )}

@@ -34,11 +34,22 @@ from app.api.routes import (
     training,
     users,
 )
-from app.core.config import is_production_environment, secret_key_is_insecure, settings
+from app.core.config import encryption_key_is_compromised, is_production_environment, secret_key_is_insecure, settings
 from app.core.rate_limit import RateLimitMiddleware
 from app.db.session import engine, init_db
 
 logger = logging.getLogger("breachsim")
+#: Container platform probes call these with the pod IP as Host, which no trusted-host
+#: list contains. They return only liveness/readiness, so they skip the host check.
+HEALTH_PATHS = frozenset({"/health", "/health/live", "/health/ready"})
+
+
+class HealthAwareTrustedHostMiddleware(TrustedHostMiddleware):
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] == "http" and scope.get("path") in HEALTH_PATHS:
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
 PUBLIC_TOKEN_PATH = re.compile(
     r"/(?:q|l|training|simulation|media|qr-assets)/[^/?]+",
     flags=re.IGNORECASE,
@@ -62,6 +73,14 @@ async def lifespan(_: FastAPI):
             "SECURITY: SECRET_KEY is the shipped default or too short. JWTs can be forged. "
             "Set a strong unique SECRET_KEY before exposing this instance to anyone."
         )
+    if encryption_key_is_compromised():
+        # Fatal in production (enforced in get_settings). This key is in the repository's git
+        # history, so anyone with a clone can decrypt every field it protects.
+        logging.getLogger("uvicorn.error").warning(
+            "SECURITY: ENCRYPTION_KEY is a key that was committed to this repository's git history. "
+            "Anyone with a copy of the repository can decrypt protected fields. Generate a new Fernet "
+            "key and re-encrypt existing data before exposing this instance to anyone."
+        )
     init_db()
     yield
 
@@ -82,7 +101,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
+app.add_middleware(HealthAwareTrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 app.add_middleware(RateLimitMiddleware)
 
 

@@ -87,7 +87,14 @@ def snapshot_policy(policy: Policy) -> dict:
     }
 
 
-def validate_generation_request(policy: Policy, *, channel: Channel, theme: str, difficulty_level: DifficultyLevel) -> PolicyValidationResult:
+def validate_generation_request(
+    policy: Policy,
+    *,
+    channel: Channel,
+    theme: str,
+    difficulty_level: DifficultyLevel,
+    instructions: str | None = None,
+) -> PolicyValidationResult:
     errors: list[str] = []
     warnings: list[str] = []
     if channel.value not in policy.allowed_delivery_channels:
@@ -102,6 +109,12 @@ def validate_generation_request(policy: Policy, *, channel: Channel, theme: str,
         )
     if difficulty_level.value not in policy.difficulty_levels:
         errors.append(f"Difficulty '{difficulty_level.value}' is not allowed by policy.")
+    # Operator instructions are screened before generation so a prohibited request is
+    # refused here rather than forwarded to the external model and filtered afterwards.
+    lowered_instructions = (instructions or "").lower()
+    for word in policy.prohibited_words:
+        if word.lower() in lowered_instructions:
+            errors.append(f"Prompt instructions contain the prohibited word '{word}'.")
     return PolicyValidationResult(passed=not errors, errors=errors, warnings=warnings)
 
 

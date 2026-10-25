@@ -8,7 +8,8 @@ the payload each adapter builds and whether anything leaves the platform.
 | Channel | Outbound action | Employee entry point | Provider needed |
 |---|---|---|---|
 | Email | SMTP send to an allowlisted mailbox | `/training/<token>` | Any SMTP account |
-| SMS | REST send to an allowlisted number | `/training/<token>` | Paid SMS gateway |
+| SMS campaigns | REST send to an allowlisted number in the legacy lab; sandbox otherwise | `/training/<token>` | Approved SMS gateway for any future live campaign |
+| SMS-only demo | Fixed, link-free test text via a local Android phone | None | SMSGate Local Server and a personal SIM, local use only |
 | QR | SMTP email with a CID-embedded QR image | `/qr/<token>` | email recipient allowlist |
 | Voice (vishing) | none — runs in the browser; real cloned voice if configured | `/call/<token>` | ElevenLabs (optional) |
 | Deepfake | none — runs in the browser; real cloned voice+video if configured | `/impersonation/<token>` | ElevenLabs + D-ID (optional) |

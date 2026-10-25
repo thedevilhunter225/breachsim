@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-def test_employee_report_returns_risk_history_and_behavior(client, admin_headers):
+def test_employee_report_returns_risk_history_and_behavior(client, admin_headers, reviewer_headers):
     employee = client.get("/api/v1/employees", headers=admin_headers).json()[0]
     scenario_response = client.post(
         "/api/v1/scenarios/generate",
@@ -16,7 +16,7 @@ def test_employee_report_returns_risk_history_and_behavior(client, admin_headers
     assert scenario_response.status_code == 201, scenario_response.text
     scenario_id = scenario_response.json()["id"]
 
-    scenario_approve_response = client.post(f"/api/v1/scenarios/{scenario_id}/approve", headers=admin_headers)
+    scenario_approve_response = client.post(f"/api/v1/scenarios/{scenario_id}/approve", headers=reviewer_headers)
     assert scenario_approve_response.status_code == 200, scenario_approve_response.text
 
     campaign_response = client.post(

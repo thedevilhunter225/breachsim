@@ -16,9 +16,10 @@ from app.models.entities import (
     CampaignTarget,
     DeliveryAttempt,
     Employee,
+    LandingToken,
     Scenario,
 )
-from app.models.enums import CampaignStatus, UserRole
+from app.models.enums import CampaignRunStatus, CampaignStatus, UserRole
 from app.schemas.campaigns import CampaignCreate, CampaignRead, CampaignUpdate, DeliveryAttemptRead
 from app.schemas.enterprise import CampaignRunCreate, CampaignRunRead
 from app.services.audit import audit_log
@@ -34,7 +35,7 @@ from app.services.delivery import deliver_campaign, deliver_campaign_email, laun
 router = APIRouter()
 
 
-def serialize_attempt(attempt: DeliveryAttempt) -> DeliveryAttemptRead:
+def serialize_attempt(attempt: DeliveryAttempt, link_expires_at=None) -> DeliveryAttemptRead:
     return DeliveryAttemptRead(
         id=str(attempt.id),
         campaign_id=str(attempt.campaign_id),
@@ -49,7 +50,23 @@ def serialize_attempt(attempt: DeliveryAttempt) -> DeliveryAttemptRead:
         retry_count=attempt.retry_count,
         next_attempt_at=attempt.next_attempt_at,
         last_error_code=attempt.last_error_code,
+        link_expires_at=link_expires_at,
     )
+
+
+def serialize_attempts(db: Session, attempts: list[DeliveryAttempt]) -> list[DeliveryAttemptRead]:
+    """Serialize attempts with their link expiry, loaded in one query."""
+    ids = [attempt.id for attempt in attempts]
+    expiry = (
+        dict(
+            db.query(LandingToken.delivery_attempt_id, LandingToken.expires_at)
+            .filter(LandingToken.delivery_attempt_id.in_(ids))
+            .all()
+        )
+        if ids
+        else {}
+    )
+    return [serialize_attempt(attempt, expiry.get(attempt.id)) for attempt in attempts]
 
 
 def serialize_campaign(campaign: Campaign) -> CampaignRead:
@@ -70,6 +87,8 @@ def serialize_campaign(campaign: Campaign) -> CampaignRead:
         scenario_count=len(campaign.scenario_links),
         landing_domain_id=campaign.landing_domain_id,
         email_connection_id=campaign.email_connection_id,
+        approved_by_user_id=campaign.approved_by_user_id,
+        second_approved_by_user_id=campaign.second_approved_by_user_id,
     )
 
 
@@ -196,7 +215,7 @@ def approve_campaign(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_
 @router.post("/campaigns/{campaign_id}/launch-sandbox", response_model=list[DeliveryAttemptRead])
 def launch_sandbox(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER))):
     attempts = launch_campaign_sandbox(db, campaign_id=campaign_id, actor=user)
-    return [serialize_attempt(attempt) for attempt in attempts]
+    return serialize_attempts(db, attempts)
 
 
 @router.post("/campaigns/{campaign_id}/deliver", response_model=list[DeliveryAttemptRead])
@@ -218,9 +237,9 @@ def deliver(
         )
         dispatch_outbox()
         attempts = db.query(DeliveryAttempt).filter(DeliveryAttempt.campaign_run_id == run.id).all()
-        return [serialize_attempt(attempt) for attempt in attempts]
+        return serialize_attempts(db, attempts)
     attempts = deliver_campaign(db, campaign_id=campaign_id, actor=user)
-    return [serialize_attempt(attempt) for attempt in attempts]
+    return serialize_attempts(db, attempts)
 
 
 @router.post("/campaigns/{campaign_id}/runs", response_model=CampaignRunRead, status_code=status.HTTP_202_ACCEPTED)
@@ -322,7 +341,7 @@ def retry_run_failures(
 def deliver_email(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER))):
     """Retained for existing integrations; prefer the channel-agnostic /deliver endpoint."""
     attempts = deliver_campaign_email(db, campaign_id=campaign_id, actor=user)
-    return [serialize_attempt(attempt) for attempt in attempts]
+    return serialize_attempts(db, attempts)
 
 
 @router.post("/campaigns/{campaign_id}/pause", response_model=CampaignRead)
@@ -332,6 +351,61 @@ def pause_campaign(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     campaign.status = CampaignStatus.PAUSED
     audit_log(db, organization_id=user.organization_id, user_id=user.id, action="campaign.pause", resource_type="campaign", resource_id=str(campaign.id))
+    db.commit()
+    return serialize_campaign(campaign)
+
+
+#: Run states that still deliver; a campaign cannot be closed underneath them.
+_OPEN_RUN_STATUSES = {
+    CampaignRunStatus.SCHEDULED,
+    CampaignRunStatus.QUEUED,
+    CampaignRunStatus.RUNNING,
+    CampaignRunStatus.CANCELLING,
+}
+
+
+@router.post("/campaigns/{campaign_id}/complete", response_model=CampaignRead)
+def complete_campaign(
+    campaign_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
+):
+    """Close a campaign: no further launches, and reports show it as completed.
+
+    Links already sent keep working until they expire so late responses are still recorded.
+    """
+    campaign = (
+        db.query(Campaign)
+        .options(selectinload(Campaign.targets), selectinload(Campaign.scenario_links))
+        .filter(Campaign.id == campaign_id, Campaign.organization_id == user.organization_id)
+        .first()
+    )
+    if not campaign:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    if campaign.status not in {CampaignStatus.ACTIVE, CampaignStatus.PAUSED}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only an active or paused campaign can be completed.",
+        )
+    open_run = (
+        db.query(CampaignRun)
+        .filter(CampaignRun.campaign_id == campaign.id, CampaignRun.status.in_(_OPEN_RUN_STATUSES))
+        .first()
+    )
+    if open_run:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pause or cancel the campaign's delivery run before completing it.",
+        )
+    campaign.status = CampaignStatus.COMPLETED
+    audit_log(
+        db,
+        organization_id=user.organization_id,
+        user_id=user.id,
+        action="campaign.complete",
+        resource_type="campaign",
+        resource_id=str(campaign.id),
+    )
     db.commit()
     return serialize_campaign(campaign)
 
@@ -363,4 +437,4 @@ def list_delivery_attempts(db: Annotated[Session, Depends(get_db)], user=Depends
         .order_by(DeliveryAttempt.created_at.desc())
         .all()
     )
-    return [serialize_attempt(attempt) for attempt in attempts]
+    return serialize_attempts(db, attempts)

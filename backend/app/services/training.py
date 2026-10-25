@@ -49,6 +49,9 @@ def complete_assignment(db: Session, *, assignment_id: str, employee, dwell_seco
     )
     if not assignment:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Training assignment not found")
+    if assignment.status == TrainingAssignmentStatus.COMPLETED:
+        # Completing twice must not add a second protective event and lower the score again.
+        return assignment
 
     assignment.status = TrainingAssignmentStatus.COMPLETED
     completion = TrainingCompletion(assignment_id=assignment.id, employee_id=employee.id, dwell_seconds=dwell_seconds)

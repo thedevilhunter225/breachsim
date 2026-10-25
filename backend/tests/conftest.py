@@ -15,8 +15,17 @@ os.environ["AI_PROVIDER"] = "rule_based"
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
-from app.main import app
+from app.db.session import engine  # noqa: E402
+from app.main import app  # noqa: E402
+
+
+@event.listens_for(engine, "connect")
+def _enforce_foreign_keys(dbapi_connection, _record) -> None:
+    # PostgreSQL enforces foreign keys; SQLite only does when asked. Without this, deletes
+    # that would fail in production (orphaned child rows) pass silently in tests.
+    dbapi_connection.execute("PRAGMA foreign_keys=ON")
 
 
 @pytest.fixture()
@@ -49,3 +58,9 @@ def manager_headers(client: TestClient) -> dict[str, str]:
 @pytest.fixture()
 def auditor_headers(client: TestClient) -> dict[str, str]:
     return login(client, "auditor@breachsim-lab.com", "Auditor123!")
+
+
+@pytest.fixture()
+def reviewer_headers(client: TestClient) -> dict[str, str]:
+    """The seeded second administrator, for two-person approvals."""
+    return login(client, "reviewer@breachsim-lab.com", "Reviewer123!")

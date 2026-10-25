@@ -126,8 +126,12 @@ def test_campaign_report_rates_stay_within_bounds(client: TestClient, admin_head
     token = attempt["preview_payload"]["preview_url"].rstrip("/").split("/")[-1]
 
     # Multiple protective events from one target used to push resilience above 100%.
-    for event_type in ["clicked_report", "marked_spam", "clicked_report"]:
-        client.post(f"/api/v1/public/training/{token}/events", json={"event_type": event_type})
+    # Only the first answer on a landing link is recorded; replays are refused.
+    statuses = [
+        client.post(f"/api/v1/public/training/{token}/events", json={"event_type": event_type}).status_code
+        for event_type in ["clicked_report", "marked_spam", "clicked_report"]
+    ]
+    assert statuses == [200, 409, 409]
 
     session = SessionLocal()
     try:
@@ -139,7 +143,7 @@ def test_campaign_report_rates_stay_within_bounds(client: TestClient, admin_head
     metrics = evidence["metrics"]
     assert 0 <= metrics["failure_rate"] <= 100
     assert 0 <= metrics["resilience_rate"] <= 100
-    assert metrics["protective_actions"] >= 3, "the extra events should still be counted"
+    assert metrics["protective_actions"] == 1, "replayed answers must not be counted"
 
 
 def test_campaign_report_downloads_as_html_and_csv(client: TestClient, admin_headers, manager_headers):
@@ -164,10 +168,25 @@ def test_campaign_report_downloads_as_html_and_csv(client: TestClient, admin_hea
 
 
 def test_audit_log_downloads_as_csv(client: TestClient, admin_headers):
+    # Guarantee at least one audited action even when this test runs on its own.
+    client.post("/api/v1/employees/import", json={"rows": []}, headers=admin_headers)
     response = client.get("/api/v1/reports/audit/download", headers=admin_headers)
     assert response.status_code == 200
     header = response.text.splitlines()[0]
     assert header == "occurred_at,actor,action,resource_type,resource_id,details"
+
+    import csv
+    import io
+    import json
+
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    assert rows, "the seeded workspace has audited actions"
+    for row in rows:
+        json.loads(row["details"])  # JSON, not a Python dict repr
+        assert row["actor"]
+
+    listed = client.get("/api/v1/audit-logs", headers=admin_headers).json()
+    assert listed and all(entry["actor"] for entry in listed)
 
 
 def test_auditor_can_export_but_not_launch(client: TestClient, admin_headers, manager_headers):

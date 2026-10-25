@@ -1,0 +1,49 @@
+# Reverse proxy + automatic HTTPS for the public demo stack (docker-compose.demo.yml).
+# Caddy obtains and renews a Let's Encrypt certificate for {$DOMAIN} on its own.
+#
+# Routing note: the links placed in emails/QRs resolve to FRONTEND pages
+# (/training, /qr, /call, /impersonation), but the server-side redirectors and the QR image
+# live at the domain ROOT on the BACKEND (/q, /l, /qr-assets). Those root paths are NOT under
+# /api and the Next.js app has no rewrites, so they must be routed to the backend explicitly
+# here or public links break.
+{
+    admin off
+    # email you@example.com   # uncomment and set for Let's Encrypt expiry notices
+}
+
+{$DOMAIN} {
+    encode zstd gzip
+    request_body {
+        max_size 30MB
+    }
+
+    log {
+        output stdout
+        format json
+    }
+
+    # Backend: the API, health probes, the QR/email redirectors and the QR image endpoint.
+    @backend path /api/* /health /health/* /q/* /l/* /qr-assets/*
+    handle @backend {
+        reverse_proxy backend:8000 {
+            transport http {
+                dial_timeout 5s
+                response_header_timeout 90s
+            }
+        }
+    }
+
+    # Everything else (dashboard, login, and the /training, /qr, /call, /impersonation
+    # landing pages) is served by the Next.js frontend.
+    handle {
+        reverse_proxy frontend:3000
+    }
+
+    header {
+        -Server
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+}

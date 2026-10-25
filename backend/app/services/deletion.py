@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import (
     Campaign,
+    CampaignRun,
     CampaignScenario,
     CampaignTarget,
     ConsentRecord,
@@ -31,6 +32,8 @@ from app.models.entities import (
     ImpersonationPersona,
     LandingToken,
     MediaAsset,
+    ProviderEventReceipt,
+    QrAssetToken,
     RiskScore,
     Scenario,
     ScenarioVersion,
@@ -68,6 +71,24 @@ class DeletionResult:
 
 def _count(db: Session, model, *criteria) -> int:
     return db.query(model).filter(*criteria).count()
+
+
+def _delete_link_and_receipt_children(db: Session, *, token_ids: list, attempt_ids: list, removed: dict[str, int]) -> None:
+    """Remove rows that reference landing tokens and delivery attempts before those go.
+
+    PostgreSQL enforces these foreign keys (SQLite in tests does not), so skipping them makes
+    an erasure or purge fail for anyone who received a QR email or had a provider receipt.
+    """
+    if token_ids:
+        removed["qr_assets"] = (
+            db.query(QrAssetToken).filter(QrAssetToken.landing_token_id.in_(token_ids)).delete(synchronize_session=False)
+        )
+    if attempt_ids:
+        removed["provider_receipts"] = (
+            db.query(ProviderEventReceipt)
+            .filter(ProviderEventReceipt.delivery_attempt_id.in_(attempt_ids))
+            .delete(synchronize_session=False)
+        )
 
 
 # --------------------------------------------------------------------------------------
@@ -209,6 +230,10 @@ def delete_campaign(db: Session, *, organization_id, campaign_id, actor, purge_e
     removed["events"] = (
         db.query(EventLog).filter(EventLog.campaign_id == campaign.id).delete(synchronize_session=False)
     )
+    campaign_token_ids = [
+        row.id for row in db.query(LandingToken.id).filter(LandingToken.campaign_id == campaign.id).all()
+    ]
+    _delete_link_and_receipt_children(db, token_ids=campaign_token_ids, attempt_ids=attempt_ids, removed=removed)
     removed["landing_tokens"] = (
         db.query(LandingToken).filter(LandingToken.campaign_id == campaign.id).delete(synchronize_session=False)
     )
@@ -218,6 +243,9 @@ def delete_campaign(db: Session, *, organization_id, campaign_id, actor, purge_e
             .filter(DeliveryAttempt.id.in_(attempt_ids))
             .delete(synchronize_session=False)
         )
+    removed["campaign_runs"] = (
+        db.query(CampaignRun).filter(CampaignRun.campaign_id == campaign.id).delete(synchronize_session=False)
+    )
     removed["targets"] = (
         db.query(CampaignTarget).filter(CampaignTarget.campaign_id == campaign.id).delete(synchronize_session=False)
     )
@@ -348,6 +376,15 @@ def delete_employee(db: Session, *, organization_id, employee_id, actor) -> Dele
     )
     removed["events"] = (
         db.query(EventLog).filter(EventLog.employee_id == employee.id).delete(synchronize_session=False)
+    )
+    employee_token_ids = [
+        row.id for row in db.query(LandingToken.id).filter(LandingToken.employee_id == employee.id).all()
+    ]
+    employee_attempt_ids = [
+        row.id for row in db.query(DeliveryAttempt.id).filter(DeliveryAttempt.employee_id == employee.id).all()
+    ]
+    _delete_link_and_receipt_children(
+        db, token_ids=employee_token_ids, attempt_ids=employee_attempt_ids, removed=removed
     )
     removed["landing_tokens"] = (
         db.query(LandingToken).filter(LandingToken.employee_id == employee.id).delete(synchronize_session=False)

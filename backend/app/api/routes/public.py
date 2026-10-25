@@ -26,6 +26,21 @@ from app.services.training import assign_micro_training
 
 router = APIRouter()
 
+#: Events a public landing page may report about itself. Delivery, opens and training
+#: completion come only from trusted server-side sources.
+LANDING_ENTRY_EVENT_TYPES = frozenset({EventType.VISITED_LANDING_PAGE, EventType.CLICKED_LINK, EventType.SCANNED_QR})
+#: The employee's answer on a landing page. Only the first answer counts, so a later
+#: click cannot overwrite or offset it (for example reporting after choosing to hand
+#: over details, or replaying "report" to lower a risk score).
+LANDING_DECISION_EVENT_TYPES = frozenset(
+    {
+        EventType.SUBMITTED_FORM_BOOLEAN,
+        EventType.CLICKED_REPORT,
+        EventType.MARKED_SPAM,
+        EventType.VERIFIED_OUT_OF_BAND,
+    }
+)
+
 
 class SimulationResponseRequest(BaseModel):
     step_key: str = Field(min_length=1, max_length=64)
@@ -101,6 +116,18 @@ def _validate_expected_host(request: Request, expected_hostname: str | None) -> 
 
 def _validate_landing_host(request: Request, landing_token: LandingToken) -> None:
     _validate_expected_host(request, landing_token.landing_hostname)
+
+
+def _recorded_decision(db: Session, landing_token: LandingToken) -> EventLog | None:
+    return (
+        db.query(EventLog)
+        .filter(
+            EventLog.landing_token_id == landing_token.id,
+            EventLog.event_type.in_(LANDING_DECISION_EVENT_TYPES),
+        )
+        .order_by(EventLog.occurred_at.asc())
+        .first()
+    )
 
 
 def _training_redirect(landing_token: LandingToken, token: str, *, entry: str) -> str:
@@ -234,7 +261,19 @@ def get_training_page(token: str, request: Request, db: Annotated[Session, Depen
             "triggers": latest_version.detected_persuasion_triggers if latest_version else [],
         },
         "preview_payload": delivery_attempt.preview_payload if delivery_attempt else {},
+        "recorded_decision": _decision_payload(_recorded_decision(db, landing_token)),
     }
+
+
+def _decision_payload(event: EventLog | None) -> dict[str, str] | None:
+    if event is None:
+        return None
+    occurred_at = event.occurred_at
+    if occurred_at.tzinfo is None:
+        # SQLite returns naive values; they are stored in UTC. Without an offset a browser
+        # would read the time as local and show the wrong hour.
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    return {"event_type": event.event_type.value, "occurred_at": occurred_at.isoformat()}
 
 
 @router.post("/training/{token}/events")
@@ -247,18 +286,37 @@ def track_training_event(
     landing_token = _load_valid_landing_token(db, token)
     _validate_landing_host(request, landing_token)
     event_type = payload.event_type
-    if landing_token.token_public_id and event_type in {
-        EventType.DELIVERED,
-        EventType.BOUNCED,
-        EventType.PROVIDER_ACCEPTED,
-        EventType.CLICKED_LINK,
-        EventType.SCANNED_QR,
-        EventType.OPENED_EMAIL,
-    }:
+    if event_type not in LANDING_ENTRY_EVENT_TYPES | LANDING_DECISION_EVENT_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="This event is recorded only by a trusted server-side source",
         )
+    if event_type in LANDING_ENTRY_EVENT_TYPES:
+        existing = (
+            db.query(EventLog)
+            .filter(EventLog.landing_token_id == landing_token.id, EventLog.event_type == event_type)
+            .first()
+        )
+        if existing:
+            # Reloading the page must not inflate visit, click or scan counts. For two-part
+            # tokens the /l and /q redirects already recorded the click or scan.
+            return {"event_id": str(existing.id), "assignment_id": None, "reason_codes": [], "duplicate": True}
+        if landing_token.token_public_id and event_type in {EventType.CLICKED_LINK, EventType.SCANNED_QR}:
+            # Without the server-side record the browser's claim cannot be trusted.
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="This event is recorded only by a trusted server-side source",
+            )
+    else:
+        recorded = _recorded_decision(db, landing_token)
+        if recorded:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "A response has already been recorded for this link.",
+                    "recorded_decision": _decision_payload(recorded),
+                },
+            )
     employee = db.query(Employee).filter(Employee.id == landing_token.employee_id).first()
     scenario = resolve_scenario_for_token(db, landing_token)
     event = create_event(

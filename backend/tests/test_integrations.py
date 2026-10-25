@@ -122,3 +122,116 @@ def test_twilio_lab_adapter_sends_only_to_an_allowlisted_number(monkeypatch):
     assert captured["url"].endswith("/Accounts/ACsynthetic/Messages.json")
     assert captured["data"]["To"] == "+15550002222"
     assert captured["auth"] == ("ACsynthetic", "test-only-token")
+
+
+def test_android_demo_sends_fixed_link_free_sms_only_to_allowlist(monkeypatch):
+    captured: dict = {}
+
+    def fake_post(url, *, auth, json, timeout):
+        captured.update({"url": url, "auth": auth, "json": json, "timeout": timeout})
+        return httpx.Response(202, request=httpx.Request("POST", url), json={"id": "demo-123", "state": "Pending"})
+
+    monkeypatch.setattr(sms_integration.httpx, "post", fake_post)
+    org = SimpleNamespace(
+        sms_provider_enabled=True,
+        sms_provider_mode="android_demo",
+        sms_api_base_url="http://192.168.1.20:8080",
+        sms_account_sid="phone-user",
+        sms_auth_token="test-only-password",
+        sms_recipient_allowlist=["+923001234567"],
+    )
+
+    with pytest.raises(HTTPException, match="not in the lab SMS allowlist"):
+        sms_integration.send_android_demo_sms(org=org, recipient="+923009999999")
+    assert captured == {}
+
+    message_id = sms_integration.send_android_demo_sms(org=org, recipient="+923001234567")
+    assert message_id == "demo-123"
+    assert captured["url"] == "http://192.168.1.20:8080/message"
+    assert captured["auth"] == ("phone-user", "test-only-password")
+    assert captured["json"] == {
+        "textMessage": {"text": sms_integration.ANDROID_DEMO_MESSAGE},
+        "phoneNumbers": ["+923001234567"],
+    }
+    assert "http" not in captured["json"]["textMessage"]["text"]
+
+
+@pytest.mark.parametrize("url", [
+    "https://api.example.com:8080",
+    "http://127.0.0.1:8080",
+    "http://169.254.169.254:8080",
+    "http://192.168.1.20:8080/other",
+    "http://192.168.1.20:80",
+])
+def test_android_demo_rejects_non_phone_gateway_urls(monkeypatch, url):
+    def unexpected_post(*args, **kwargs):
+        pytest.fail("Gateway must not be called for an unsafe URL")
+
+    monkeypatch.setattr(sms_integration.httpx, "post", unexpected_post)
+    org = SimpleNamespace(
+        sms_provider_enabled=True,
+        sms_provider_mode="android_demo",
+        sms_api_base_url=url,
+        sms_account_sid="phone-user",
+        sms_auth_token="test-only-password",
+        sms_recipient_allowlist=["+923001234567"],
+    )
+    with pytest.raises(HTTPException, match="Android gateway URL"):
+        sms_integration.send_android_demo_sms(org=org, recipient="+923001234567")
+
+
+def test_android_demo_endpoint_is_admin_only_and_queues_no_link(client, admin_headers, manager_headers, monkeypatch):
+    captured: dict = {}
+
+    def fake_post(url, *, auth, json, timeout):
+        captured.update({"url": url, "json": json})
+        return httpx.Response(202, request=httpx.Request("POST", url), json={"id": "demo-endpoint-1"})
+
+    monkeypatch.setattr(sms_integration.httpx, "post", fake_post)
+    response = client.put(
+        "/api/v1/integrations/sms",
+        headers=admin_headers,
+        json={
+            "sms_provider_enabled": True,
+            "sms_provider_mode": "android_demo",
+            "sms_api_base_url": "http://192.168.1.20:8080",
+            "sms_account_sid": "phone-user",
+            "sms_auth_token": "test-only-password",
+            "sms_recipient_allowlist": ["+923001234567"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["has_auth_token"] is True
+    assert "sms_auth_token" not in response.json()
+
+    denied = client.post(
+        "/api/v1/integrations/sms/demo-send",
+        headers=manager_headers,
+        json={"recipient": "+923001234567"},
+    )
+    assert denied.status_code == 403
+    assert captured == {}
+
+    response = client.post(
+        "/api/v1/integrations/sms/demo-send",
+        headers=admin_headers,
+        json={"recipient": "+923001234567"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"message_id": "demo-endpoint-1", "status": "queued"}
+    assert captured["json"]["phoneNumbers"] == ["+923001234567"]
+    assert "http" not in captured["json"]["textMessage"]["text"]
+
+    for _ in range(3):
+        response = client.post(
+            "/api/v1/integrations/sms/demo-send",
+            headers=admin_headers,
+            json={"recipient": "+923001234567"},
+        )
+        assert response.status_code == 200
+    fifth = client.post(
+        "/api/v1/integrations/sms/demo-send",
+        headers=admin_headers,
+        json={"recipient": "+923001234567"},
+    )
+    assert fifth.status_code == 429

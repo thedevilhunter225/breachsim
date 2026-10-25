@@ -74,7 +74,7 @@ resource "azurerm_container_app" "api" {
         for_each = {
           ENVIRONMENT                           = "production"
           AI_PROVIDER                           = "together"
-          TOGETHER_MODEL                        = "openai/gpt-oss-20b"
+          TOGETHER_MODEL                        = "openai/gpt-oss-120b"
           FRONTEND_BASE_URL                     = "https://app.${var.platform_domain}"
           PUBLIC_URL_SCHEME                     = "https"
           PLATFORM_TRAINING_DOMAIN              = var.platform_domain
@@ -97,7 +97,7 @@ resource "azurerm_container_app" "api" {
           MICROSOFT_GRAPH_CLIENT_SECRET_REF     = "kv://microsoft-graph-client-secret"
           MICROSOFT_GRAPH_REDIRECT_URI          = "https://app.${var.platform_domain}/api/v1/email-connections/microsoft/callback"
           GOOGLE_SERVICE_ACCOUNT_SECRET_REF     = "kv://google-service-account"
-          SSO_CALLBACK_URL                      = "https://app.${var.platform_domain}/api/v1/sso/callback"
+          SSO_CALLBACK_URL                      = "https://app.${var.platform_domain}/api/v1/auth/sso/callback"
           EVIDENCE_STORAGE_ACCOUNT_URL          = azurerm_storage_account.evidence.primary_blob_endpoint
           EVIDENCE_STORAGE_CONTAINER            = azurerm_storage_container.audit.name
           APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.application.connection_string

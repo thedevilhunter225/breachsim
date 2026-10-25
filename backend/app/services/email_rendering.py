@@ -11,6 +11,16 @@ class RenderedEmail:
     html_body: str
 
 
+#: The generator's internal marker for "the platform adds the link here".
+CTA_MARKER = "clickhere"
+
+
+def display_cta_text(value: str | None, default: str = "Review securely") -> str:
+    """Button text for a recipient; the internal marker never reaches an inbox."""
+    text = (value or "").strip()
+    return default if not text or text.lower() == CTA_MARKER else text
+
+
 def personalize_locally(value: str, *, employee, organization) -> str:
     first_name = employee.full_name.split()[0] if employee.full_name.split() else "Colleague"
     department = employee.department.name if employee.department else "your department"
@@ -38,7 +48,7 @@ def render_campaign_email(
     subject = personalize_locally(scenario_snapshot["subject"], employee=employee, organization=organization)
     body = personalize_locally(scenario_snapshot["body_copy"], employee=employee, organization=organization)
     cta_text = personalize_locally(
-        scenario_snapshot.get("cta_text") or "Review securely",
+        display_cta_text(scenario_snapshot.get("cta_text")),
         employee=employee,
         organization=organization,
     )

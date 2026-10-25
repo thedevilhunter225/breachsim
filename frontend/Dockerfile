@@ -25,6 +25,8 @@ RUN addgroup --system --gid 10001 breachsim \
 COPY --from=builder --chown=breachsim:breachsim /app/.next/standalone ./
 COPY --from=builder --chown=breachsim:breachsim /app/.next/static ./.next/static
 COPY --from=builder --chown=breachsim:breachsim /app/public ./public
+# Canonical legal templates read by /legal and /legal/[slug] (lib/legal-documents.ts).
+COPY --from=builder --chown=breachsim:breachsim /app/content ./content
 USER breachsim
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \

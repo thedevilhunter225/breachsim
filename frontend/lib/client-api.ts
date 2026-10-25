@@ -209,6 +209,7 @@ export interface Persona {
   role_title: string;
   relationship_to_targets: string;
   modality: MediaModality;
+  created_by_user_id?: string | null;
   status: PersonaStatus;
   is_real_person: boolean;
   linked_employee_id?: string | null;
@@ -316,6 +317,8 @@ export interface Campaign {
   scenario_count: number;
   landing_domain_id?: string | null;
   email_connection_id?: string | null;
+  approved_by_user_id?: string | null;
+  second_approved_by_user_id?: string | null;
 }
 
 export interface DeliveryAttempt {
@@ -332,6 +335,7 @@ export interface DeliveryAttempt {
   retry_count: number;
   next_attempt_at?: string | null;
   last_error_code?: string | null;
+  link_expires_at?: string | null;
 }
 
 export interface OrganizationDomain {
@@ -544,6 +548,7 @@ export interface RiskIntelligenceData {
 
 export interface AuditLog {
   id: string;
+  actor?: string;
   action: string;
   resource_type: string;
   resource_id?: string | null;
@@ -618,9 +623,36 @@ async function parseResponse<T>(response: Response): Promise<T> {
     if (response.status === 401 && typeof window !== "undefined") {
       window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
     }
-    throw new ApiError(payload?.detail ? JSON.stringify(payload.detail) : response.statusText, response.status, payload);
+    throw new ApiError(payload?.detail ? formatErrorDetail(payload.detail) : response.statusText, response.status, payload);
   }
   return payload as T;
+}
+
+// FastAPI returns `detail` as a string, a list of validation errors, or an object. Turn
+// each into a sentence an operator can act on instead of showing raw JSON.
+export function formatErrorDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (!item || typeof item !== "object") return String(item);
+        const { loc, msg } = item as { loc?: unknown[]; msg?: string };
+        const field = Array.isArray(loc) ? loc.filter((part) => part !== "body" && typeof part === "string").join(".") : "";
+        const label = field ? `${field.replace(/_/g, " ")}: ` : "";
+        return `${label}${msg ?? "Invalid value"}`;
+      })
+      .join("; ");
+  }
+  if (detail && typeof detail === "object") {
+    const record = detail as Record<string, unknown>;
+    if (Array.isArray(record.errors) && record.errors.every((item) => typeof item === "string")) {
+      return record.errors.join(" ");
+    }
+    for (const key of ["message", "detail", "reason", "error"]) {
+      if (typeof record[key] === "string") return record[key] as string;
+    }
+  }
+  return JSON.stringify(detail);
 }
 
 function authHeaders(_token: string, initHeaders?: HeadersInit): HeadersInit {
@@ -1063,6 +1095,13 @@ export function approveCampaign(token: string, campaignId: string) {
   });
 }
 
+export function completeCampaign(token: string, campaignId: string) {
+  return request<Campaign>(`/campaigns/${campaignId}/complete`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
 export function launchCampaignSandbox(token: string, campaignId: string) {
   return request<DeliveryAttempt[]>(`/campaigns/${campaignId}/launch-sandbox`, {
     method: "POST",
@@ -1279,6 +1318,14 @@ export function updateSmsIntegration(token: string, payload: Record<string, unkn
   });
 }
 
+export function sendSmsDemo(token: string, recipient: string) {
+  return request<{ message_id: string; status: string }>("/integrations/sms/demo-send", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ recipient }),
+  });
+}
+
 export function getImpersonationSettings(token: string) {
   return request<ImpersonationSettings>("/integrations/impersonation", { headers: authHeaders(token) });
 }
@@ -1288,5 +1335,72 @@ export function updateImpersonationSettings(token: string, payload: Record<strin
     method: "PUT",
     headers: authHeaders(token),
     body: JSON.stringify(payload),
+  });
+}
+
+// ---------------------------------------------------------------------------------------
+// Employee self-service portal (authenticated by the employee's own exercise link)
+// ---------------------------------------------------------------------------------------
+
+export type PortalConsentStatus = "consented" | "pending" | "opted_out" | "redaction_requested";
+
+export interface PortalTrainingItem {
+  id: string;
+  status: string;
+  title: string;
+  body: string;
+  guidance_points: string[];
+  assigned_at: string | null;
+  retest_scheduled_for: string | null;
+}
+
+export interface EmployeePortalSummary {
+  first_name: string;
+  organization_name: string | null;
+  privacy_notice: string | null;
+  consent_status: PortalConsentStatus;
+  trend: "improving" | "worsening" | "stable";
+  training: PortalTrainingItem[];
+}
+
+// Employees have no operator session: send no cookies and never raise the operator
+// "session expired" event, so an employee visit cannot sign an operator out.
+async function portalRequest<T>(path: string, portalToken: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", "X-Portal-Token": portalToken },
+    credentials: "omit",
+    cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
+  });
+  const text = await response.text();
+  let payload: any = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    throw new ApiError(payload?.detail ? formatErrorDetail(payload.detail) : response.statusText, response.status, payload);
+  }
+  return payload as T;
+}
+
+export function getPortalSummary(portalToken: string) {
+  return portalRequest<EmployeePortalSummary>("/public/portal", portalToken);
+}
+
+export function portalOptOut(portalToken: string) {
+  return portalRequest<EmployeePortalSummary>("/public/portal/opt-out", portalToken, { method: "POST" });
+}
+
+export function portalRequestRedaction(portalToken: string) {
+  return portalRequest<EmployeePortalSummary>("/public/portal/redaction-request", portalToken, { method: "POST" });
+}
+
+export function portalCompleteTraining(portalToken: string, assignmentId: string, dwellSeconds: number) {
+  return portalRequest<EmployeePortalSummary>(`/public/portal/training/${assignmentId}/complete`, portalToken, {
+    method: "POST",
+    body: JSON.stringify({ dwell_seconds: Math.max(0, Math.min(3600, Math.round(dwellSeconds))) }),
   });
 }

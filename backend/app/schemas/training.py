@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import TrainingAssignmentStatus
 
@@ -33,4 +33,4 @@ class TrainingAssignmentRead(BaseModel):
 
 
 class TrainingCompleteRequest(BaseModel):
-    dwell_seconds: int = 45
+    dwell_seconds: int = Field(default=45, ge=0, le=3600)

@@ -599,7 +599,11 @@ export function PersonasConsole() {
 
                     {isAdmin ? (
                       <div className="flex shrink-0 flex-wrap gap-2">
-                        {persona.status !== "approved" && persona.status !== "revoked" ? (
+                        {persona.status === "expired" ? (
+                          <span className="text-xs text-muted">Consent expired — register a new persona to renew it.</span>
+                        ) : persona.status !== "approved" && persona.status !== "revoked" && persona.created_by_user_id === session?.user.id ? (
+                          <span className="text-xs text-muted">Awaiting approval by a second administrator.</span>
+                        ) : persona.status !== "approved" && persona.status !== "revoked" ? (
                           <button
                             type="button"
                             className="btn-secondary btn-sm"

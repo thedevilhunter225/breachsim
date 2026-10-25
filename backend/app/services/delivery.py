@@ -35,10 +35,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import is_production_environment, settings
 from app.models.entities import Campaign, DeliveryAttempt, Employee, LandingToken, Organization, Scenario
-from app.models.enums import CampaignStatus, Channel, DeliveryStatus, EventType
+from app.models.enums import CampaignStatus, Channel, ConsentStatus, DeliveryStatus, EventType
 from app.services.audit import audit_log
 from app.services.email_integration import send_lab_email
+from app.services.email_rendering import display_cta_text
 from app.services.events import create_event
+from app.services.policy_engine import get_or_create_policy
 from app.services.sms_integration import send_lab_sms
 
 TOKEN_TTL_DAYS = 30
@@ -341,13 +343,31 @@ def _deepfake_payload(latest_version, media_url: str, organization: Organization
 # Sandbox launch — every channel, nothing outbound
 # --------------------------------------------------------------------------------------
 
+def _excluded_by_consent(policy, employee: Employee | None) -> bool:
+    """Opted-out employees and pending redaction requests are never targeted, sandbox included.
+
+    Mirrors the suppression in campaign_runs so the legacy and interactive paths cannot
+    reach someone who withdrew through the employee portal.
+    """
+    return bool(
+        employee is not None
+        and policy.opt_out_respected
+        and employee.consent_status in {ConsentStatus.OPTED_OUT, ConsentStatus.REDACTION_REQUESTED}
+    )
+
+
 def launch_campaign_sandbox(db: Session, *, campaign_id, actor) -> list[DeliveryAttempt]:
     campaign = _load_campaign(db, campaign_id=campaign_id, actor=actor)
     organization = db.query(Organization).filter(Organization.id == actor.organization_id).first()
     scenario, latest_version = _scenario_for_campaign(db, campaign)
+    policy = get_or_create_policy(db, campaign.organization_id)
     attempts: list[DeliveryAttempt] = []
+    excluded = 0
 
     for target in campaign.targets:
+        if _excluded_by_consent(policy, target.employee):
+            excluded += 1
+            continue
         attempt, token = _issue_attempt_and_token(
             db,
             campaign=campaign,
@@ -383,7 +403,7 @@ def launch_campaign_sandbox(db: Session, *, campaign_id, actor) -> list[Delivery
         action="campaign.launch_sandbox",
         resource_type="campaign",
         resource_id=str(campaign.id),
-        details={"attempt_count": len(attempts), "channel": campaign.channel.value},
+        details={"attempt_count": len(attempts), "channel": campaign.channel.value, "excluded_opted_out": excluded},
     )
     db.commit()
     return attempts
@@ -421,9 +441,14 @@ def deliver_campaign(db: Session, *, campaign_id, actor) -> list[DeliveryAttempt
     if not outbound_available:
         adapter = _activate_in_platform_attempt
 
+    policy = get_or_create_policy(db, campaign.organization_id)
     attempts: list[DeliveryAttempt] = []
+    excluded = 0
     for target in campaign.targets:
         employee = target.employee
+        if _excluded_by_consent(policy, employee):
+            excluded += 1
+            continue
         attempt, token = _issue_attempt_and_token(
             db,
             campaign=campaign,
@@ -484,6 +509,7 @@ def deliver_campaign(db: Session, *, campaign_id, actor) -> list[DeliveryAttempt
             "channel": campaign.channel.value,
             "attempt_count": len(attempts),
             "delivered": sum(1 for attempt in attempts if attempt.status == DeliveryStatus.DELIVERED),
+            "excluded_opted_out": excluded,
         },
     )
     db.commit()
@@ -525,7 +551,7 @@ def _deliver_email_attempt(db: Session, *, organization, employee, token, latest
         subject=latest_version.subject,
         body_text=latest_version.body_copy,
         cta_url=f"{settings.frontend_base_url}/training/{token.token}",
-        cta_text=latest_version.cta_text or "clickhere",
+        cta_text=display_cta_text(latest_version.cta_text),
     )
     return "lab_email"
 

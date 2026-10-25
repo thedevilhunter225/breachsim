@@ -1,18 +1,56 @@
+# Single-VM alternative deployment. The primary production path is the Terraform /
+# Azure Container Apps deployment in infra/terraform (see docs/production-deployment.md);
+# this file is a restricted evaluation reference, not the 50,000-recipient architecture.
+#
+# It runs the API, frontend, PostgreSQL, Redis and the workers on one host behind Caddy, but
+# it is not self-contained: the production startup check (validate_production_settings in
+# backend/app/core/config.py) still requires Azure Service Bus (campaign delivery queue),
+# Azure Key Vault (provider secrets) and Azure Blob storage (immutable evidence), reached with
+# the service principal in AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET. Public
+# campaign links are only served through Azure Front Door (X-Azure-FDID must equal
+# FRONT_DOOR_ID). The workers run the same entrypoints as Terraform's Container Apps Jobs.
+#
+# Every ${VAR} comes from .env.production (template: .env.production.example):
+#   docker compose --env-file .env.production -f docker-compose.production.yml up -d
 name: breachsim
 
 x-backend-environment: &backend-environment
   ENVIRONMENT: production
   DATABASE_URL: postgresql+psycopg://breachsim:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/breachsim
   REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
-  SECRET_KEY: ${BACKEND_SECRET_KEY:?set BACKEND_SECRET_KEY}
-  ENCRYPTION_KEY: ${BACKEND_ENCRYPTION_KEY:?set BACKEND_ENCRYPTION_KEY}
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
   FRONTEND_BASE_URL: https://${DOMAIN:?set DOMAIN}
+  PUBLIC_URL_SCHEME: https
+  PLATFORM_TRAINING_DOMAIN: ${PLATFORM_TRAINING_DOMAIN:?PLATFORM_TRAINING_DOMAIN is required}
+  FRONT_DOOR_ID: ${FRONT_DOOR_ID:?FRONT_DOOR_ID is required}
+  FRONT_DOOR_ENDPOINT_HOSTNAME: ${FRONT_DOOR_ENDPOINT_HOSTNAME:?FRONT_DOOR_ENDPOINT_HOSTNAME is required}
   CORS_ORIGINS: '["https://${DOMAIN}"]'
-  TRUSTED_HOSTS: '["${DOMAIN}","backend","localhost","127.0.0.1"]'
+  # Production rejects loopback/test hostnames; the backend healthcheck sends Host: backend.
+  TRUSTED_HOSTS: '["${DOMAIN}","backend"]'
+  SESSION_COOKIE_SECURE: "true"
   ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
   API_DOCS_ENABLED: "false"
   LOG_JSON: "true"
   SEED_DEMO_CONTENT: "false"
+  LAB_EMAIL_PROVIDER_ENABLED: "false"
+  LAB_SMS_PROVIDER_ENABLED: "false"
+  EMAIL_DELIVERY_BACKEND: service_bus
+  SERVICE_BUS_FULLY_QUALIFIED_NAMESPACE: ${SERVICE_BUS_FULLY_QUALIFIED_NAMESPACE:?SERVICE_BUS_FULLY_QUALIFIED_NAMESPACE is required}
+  SERVICE_BUS_CAMPAIGN_QUEUE: ${SERVICE_BUS_CAMPAIGN_QUEUE:-campaign-delivery}
+  AZURE_KEY_VAULT_URL: ${AZURE_KEY_VAULT_URL:?AZURE_KEY_VAULT_URL is required}
+  EVIDENCE_STORAGE_ACCOUNT_URL: ${EVIDENCE_STORAGE_ACCOUNT_URL:?EVIDENCE_STORAGE_ACCOUNT_URL is required}
+  EVIDENCE_STORAGE_CONTAINER: ${EVIDENCE_STORAGE_CONTAINER:?EVIDENCE_STORAGE_CONTAINER is required}
+  # DefaultAzureCredential reads this service principal outside Azure (Container Apps use a
+  # managed identity instead) for Service Bus, Key Vault and Blob storage.
+  AZURE_TENANT_ID: ${AZURE_TENANT_ID:?AZURE_TENANT_ID is required}
+  AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:?AZURE_CLIENT_ID is required}
+  AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:?AZURE_CLIENT_SECRET is required}
+  MICROSOFT_GRAPH_CLIENT_ID: ${MICROSOFT_GRAPH_CLIENT_ID:-}
+  MICROSOFT_GRAPH_CLIENT_SECRET_REF: kv://microsoft-graph-client-secret
+  MICROSOFT_GRAPH_REDIRECT_URI: https://${DOMAIN}/api/v1/email-connections/microsoft/callback
+  GOOGLE_SERVICE_ACCOUNT_SECRET_REF: kv://google-service-account
+  SSO_CALLBACK_URL: https://${DOMAIN}/api/v1/auth/sso/callback
   MEDIA_STORAGE_DIR: /data/media
   REPORT_EXPORT_DIR: /data/reports
   BOOTSTRAP_ORG_NAME: ${BOOTSTRAP_ORG_NAME:-BreachSim Organization}
@@ -21,16 +59,18 @@ x-backend-environment: &backend-environment
   BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
   BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-BreachSim Administrator}
   BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+  BOOTSTRAP_ADMIN_MFA_SECRET: ${BOOTSTRAP_ADMIN_MFA_SECRET:-}
   BOOTSTRAP_REVIEWER_EMAIL: ${BOOTSTRAP_REVIEWER_EMAIL:-}
   BOOTSTRAP_REVIEWER_NAME: ${BOOTSTRAP_REVIEWER_NAME:-BreachSim Reviewer}
   BOOTSTRAP_REVIEWER_PASSWORD: ${BOOTSTRAP_REVIEWER_PASSWORD:-}
+  BOOTSTRAP_REVIEWER_MFA_SECRET: ${BOOTSTRAP_REVIEWER_MFA_SECRET:-}
   AI_PROVIDER: ${AI_PROVIDER:-rule_based}
   TOGETHER_API_KEY: ${TOGETHER_API_KEY:-}
-  TOGETHER_MODEL: ${TOGETHER_MODEL:-openai/gpt-oss-20b}
-  VOICE_CLONE_PROVIDER: ${VOICE_CLONE_PROVIDER:-none}
-  ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
-  VIDEO_CLONE_PROVIDER: ${VIDEO_CLONE_PROVIDER:-none}
-  DID_API_KEY: ${DID_API_KEY:-}
+  TOGETHER_MODEL: ${TOGETHER_MODEL:-openai/gpt-oss-120b}
+  # Synthetic voice/video cloning is excluded from the initial production launch.
+  SYNTHETIC_MEDIA_PRODUCTION_APPROVED: "false"
+  VOICE_CLONE_PROVIDER: none
+  VIDEO_CLONE_PROVIDER: none
 
 services:
   postgres:
@@ -92,6 +132,19 @@ services:
         "--forwarded-allow-ips",
         "*",
       ]
+    healthcheck:
+      # The image's default probe sends Host: 127.0.0.1, which production TRUSTED_HOSTS rejects.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as r; r.urlopen(r.Request('http://127.0.0.1:8000/health/ready', headers={'Host': 'backend'}), timeout=2)",
+        ]
+      interval: 30s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
     volumes:
       - media_data:/data/media
       - report_data:/data/reports
@@ -102,12 +155,18 @@ services:
         condition: service_healthy
     networks: [edge, data]
 
-  worker:
+  # The two workers run the same entrypoints as Terraform's Container Apps Jobs. Both join
+  # edge for outbound access to Service Bus, Key Vault and the mail provider APIs.
+  delivery-worker:
     build:
       context: ./backend
     restart: unless-stopped
     environment: *backend-environment
-    command: ["python", "-m", "app.workers.worker"]
+    # Drains the Service Bus campaign queue and exits after a short idle period, like the
+    # event-triggered job; the restart policy starts the next polling run.
+    command: ["python", "-m", "app.workers.service_bus_worker"]
+    healthcheck:
+      disable: true
     volumes:
       - media_data:/data/media
       - report_data:/data/reports
@@ -116,7 +175,22 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-    networks: [data]
+    networks: [edge, data]
+
+  outbox-dispatcher:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment: *backend-environment
+    init: true
+    # Terraform schedules this one-shot dispatcher every minute; loop it here.
+    command: ["sh", "-c", "while true; do python -m app.workers.outbox_dispatcher; sleep 60; done"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [edge, data]
 
   frontend:
     build:

@@ -29,7 +29,7 @@ azure-servicebus==7.14.3
     # via breachsim-backend (pyproject.toml)
 azure-storage-blob==12.30.0
     # via breachsim-backend (pyproject.toml)
-certifi==2026.7.22
+certifi==2026.10.19
     # via
     #   httpcore
     #   httpx
@@ -102,7 +102,7 @@ msal==1.37.0
     #   msal-extensions
 msal-extensions==1.3.1
     # via azure-identity
-pillow==12.3.0
+pillow==13.0.0
     # via qrcode
 psycopg==3.3.4
     # via breachsim-backend (pyproject.toml)
@@ -122,7 +122,7 @@ pydantic-core==2.46.4
     # via pydantic
 pydantic-settings==2.15.0
     # via breachsim-backend (pyproject.toml)
-pyjwt==2.13.0
+pyjwt==2.15.1
     # via
     #   breachsim-backend (pyproject.toml)
     #   msal
@@ -182,7 +182,7 @@ typing-inspection==0.4.4
     #   pydantic-settings
 tzdata==2026.3
     # via psycopg
-urllib3==2.7.0
+urllib3==2.8.0
     # via requests
 uvicorn==0.52.3
     # via breachsim-backend (pyproject.toml)

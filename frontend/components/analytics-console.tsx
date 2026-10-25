@@ -69,7 +69,8 @@ export function AnalyticsConsole() {
         <div className="section-title">Channel Breakdown</div>
         <p className="mt-1.5 text-[0.82rem] leading-relaxed text-muted">
           Each channel fails in its own vocabulary — a click on email, a scan on QR, a disclosure on a
-          call, trusting a fake on deepfake. Rates are share of people reached, not share of events.
+          call, trusting a fake on deepfake. Counts are actions; percentages are people reached. Anyone who took a
+          risky action counts as failed, even if they also reported it.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {dashboard.channel_performance.map((channel) => {
@@ -92,8 +93,8 @@ export function AnalyticsConsole() {
                   <div className="mt-4 text-[0.74rem] leading-relaxed text-subtle">Not yet exercised</div>
                 ) : (
                   <div className="mt-4 grid grid-cols-2 gap-2">
-                    <MiniMetric label="Risky" value={risky} rate={channel.failure_rate} tone="breach" />
-                    <MiniMetric label="Safe" value={protective} rate={channel.resilience_rate} tone="signal" />
+                    <MiniMetric label="Risky actions" value={risky} rate={channel.failure_rate} rateLabel="of people failed" tone="breach" />
+                    <MiniMetric label="Safe actions" value={protective} rate={channel.resilience_rate} rateLabel="of people stayed safe" tone="signal" />
                   </div>
                 )}
               </div>
@@ -117,11 +118,13 @@ function MiniMetric({
   label,
   value,
   rate,
+  rateLabel,
   tone,
 }: {
   label: string;
   value: number;
   rate?: number;
+  rateLabel: string;
   tone: "breach" | "signal";
 }) {
   const toneMap = {
@@ -134,7 +137,7 @@ function MiniMetric({
       <div className="text-[0.6rem] font-bold uppercase tracking-[0.12em]">{label}</div>
       <div className="numeric mt-1 text-base font-bold">{value}</div>
       {typeof rate === "number" ? (
-        <div className="numeric text-[0.65rem] opacity-75">{rate}% of people</div>
+        <div className="numeric text-[0.65rem] opacity-75">{rate}% {rateLabel}</div>
       ) : null}
     </div>
   );

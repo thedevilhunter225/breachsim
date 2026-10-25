@@ -29,6 +29,7 @@ import {
   getSmsIntegration,
   getOperators,
   resetOperatorPassword,
+  sendSmsDemo,
   updateCurrentOrg,
   updateEmailIntegration,
   updateImpersonationSettings,
@@ -40,6 +41,7 @@ import {
   type OperatorAccount,
   type SmsIntegration,
 } from "@/lib/client-api";
+import { canManageContent } from "@/lib/roles";
 
 type TabKey = "launch" | "organization" | "operators" | "email" | "sms" | "impersonation";
 
@@ -92,6 +94,7 @@ export function SettingsConsole() {
   const [org, setOrg] = useState(defaultOrg);
   const [email, setEmail] = useState(defaultEmail);
   const [sms, setSms] = useState(defaultSms);
+  const [smsDemoRecipient, setSmsDemoRecipient] = useState("");
   const [impersonation, setImpersonation] = useState<ImpersonationSettings | null>(null);
   const [operators, setOperators] = useState<OperatorAccount[]>([]);
   const [operatorForm, setOperatorForm] = useState({
@@ -142,6 +145,19 @@ export function SettingsConsole() {
     } finally {
       setBusy(null);
     }
+  }
+
+  if (session && !canManageContent(session)) {
+    return (
+      <section className="workspace-page-header">
+        <div className="section-title">Workspace administration</div>
+        <h1 className="display-font mt-1.5 text-2xl font-bold text-ink">Managed by administrators</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+          Your role has read-only access. Workspace settings, integrations and operator accounts are managed by
+          your BreachSim administrators.
+        </p>
+      </section>
+    );
   }
 
   return (
@@ -558,8 +574,8 @@ export function SettingsConsole() {
       {tab === "sms" ? (
         <section className="card p-5 md:p-6">
           <SectionHeader
-            title="SMS delivery (smishing)"
-            subtitle="Speaks the Twilio Messages REST shape, so most gateways work unchanged."
+            title="SMS delivery"
+            subtitle="Use a local Android phone for a tightly limited, link-free delivery demo."
           />
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -576,46 +592,59 @@ export function SettingsConsole() {
                 id="sms-mode"
                 className="field"
                 value={sms.sms_provider_mode}
-                onChange={(event) => setSms({ ...sms, sms_provider_mode: event.target.value })}
+                onChange={(event) =>
+                  setSms({
+                    ...sms,
+                    sms_provider_mode: event.target.value,
+                    sms_api_base_url: event.target.value === "android_demo" ? "" : defaultSms.sms_api_base_url,
+                    sms_account_sid: "",
+                    sms_auth_token: "",
+                    has_auth_token: false,
+                    sms_from_number: "",
+                  })
+                }
               >
                 <option value="sandbox">Sandbox (preview only)</option>
-                <option value="lab">Lab (live delivery)</option>
+                <option value="android_demo">Android phone (SMS-only demo)</option>
+                <option value="lab">Legacy API lab</option>
               </select>
             </div>
             <TextField
               id="sms-base"
-              label="API base URL"
+              label={sms.sms_provider_mode === "android_demo" ? "Phone LAN URL" : "API base URL"}
               value={sms.sms_api_base_url ?? ""}
-              placeholder="https://api.twilio.com/2010-04-01"
+              placeholder={sms.sms_provider_mode === "android_demo" ? "http://192.168.1.100:8080" : "https://api.twilio.com/2010-04-01"}
               onChange={(value) => setSms({ ...sms, sms_api_base_url: value })}
             />
             <TextField
               id="sms-sid"
-              label="Account SID"
+              label={sms.sms_provider_mode === "android_demo" ? "Phone gateway username" : "Account SID"}
               value={sms.sms_account_sid ?? ""}
               onChange={(value) => setSms({ ...sms, sms_account_sid: value })}
             />
             <div>
               <label className="field-label" htmlFor="sms-token">
-                Auth token
+                {sms.sms_provider_mode === "android_demo" ? "Phone gateway password" : "Auth token"}
               </label>
               <input
                 id="sms-token"
                 type="password"
                 className="field"
                 value={sms.sms_auth_token}
-                placeholder={sms.has_auth_token ? "Saved — enter only to replace" : "Provider auth token"}
+                placeholder={sms.has_auth_token ? "Saved — enter only to replace" : sms.sms_provider_mode === "android_demo" ? "Phone gateway password" : "Provider auth token"}
                 onChange={(event) => setSms({ ...sms, sms_auth_token: event.target.value })}
               />
               <p className="field-hint">Encrypted at rest.</p>
             </div>
-            <TextField
-              id="sms-from"
-              label="From number"
-              value={sms.sms_from_number ?? ""}
-              placeholder="+15550001111"
-              onChange={(value) => setSms({ ...sms, sms_from_number: value })}
-            />
+            {sms.sms_provider_mode !== "android_demo" ? (
+              <TextField
+                id="sms-from"
+                label="From number"
+                value={sms.sms_from_number ?? ""}
+                placeholder="+15550001111"
+                onChange={(value) => setSms({ ...sms, sms_from_number: value })}
+              />
+            ) : null}
             <div className="md:col-span-2">
               <label className="field-label" htmlFor="sms-allowlist">
                 Recipient allowlist
@@ -630,8 +659,9 @@ export function SettingsConsole() {
                 }
               />
               <p className="field-hint">
-                One number per line in E.164 format. Numbers are normalized before comparison, and anything
-                not listed is refused at send time.
+                {sms.sms_provider_mode === "android_demo"
+                  ? "Add at most four consenting Pakistani test numbers in +923xxxxxxxxx format. The demo cannot send to anyone else."
+                  : "One number per line in E.164 format. Anything not listed is refused at send time."}
               </p>
             </div>
           </div>
@@ -663,11 +693,46 @@ export function SettingsConsole() {
             Save SMS integration
           </button>
 
-          <Hint>
-            The Twilio trial only permits provided message templates. Testing custom campaign SMS text
-            needs a paid gateway account and an allowed test number. Leave the provider disabled until then;
-            sandbox previews still work. Enterprise SMS remains disabled for this release.
-          </Hint>
+          {sms.sms_provider_mode === "android_demo" ? (
+            <div className="mt-5 space-y-3 rounded-xl border border-border bg-surface p-4">
+              <p className="text-sm font-semibold text-ink">Send one demo SMS</p>
+              <p className="text-sm text-muted">
+                The phone must run SMSGate Local Server on the same Wi-Fi as this PC. Save these settings first.
+                The message is fixed, clearly labelled as a BreachSim demo, and contains no link. Maximum four
+                sends per UTC day.
+              </p>
+              <label className="field-label" htmlFor="sms-demo-recipient">Test recipient</label>
+              <select
+                id="sms-demo-recipient"
+                className="field"
+                value={smsDemoRecipient || sms.sms_recipient_allowlist[0] || ""}
+                onChange={(event) => setSmsDemoRecipient(event.target.value)}
+              >
+                {sms.sms_recipient_allowlist.length === 0 ? <option value="">Add an allowlisted number first</option> : null}
+                {sms.sms_recipient_allowlist.map((number) => <option key={number} value={number}>{number}</option>)}
+              </select>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy !== null || !sms.sms_provider_enabled || sms.sms_recipient_allowlist.length === 0}
+                onClick={() =>
+                  void save(
+                    "sms-demo",
+                    () => sendSmsDemo(session!.access_token, smsDemoRecipient || sms.sms_recipient_allowlist[0]),
+                    "Phone gateway queued the test SMS. Check the recipient phone; delivery is not yet confirmed.",
+                  )
+                }
+              >
+                {busy === "sms-demo" ? <Loader2 size={15} className="animate-spin" /> : <MessageSquare size={15} />}
+                Send demo SMS
+              </button>
+            </div>
+          ) : (
+            <Hint>
+              Sandbox previews remain available. The legacy API lab is not approved for simulated phishing on
+              Twilio. Enterprise SMS remains disabled for this release.
+            </Hint>
+          )}
         </section>
       ) : null}
 

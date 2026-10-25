@@ -9,7 +9,7 @@ export default defineConfig({
     environment: "node",
     coverage: {
       provider: "v8",
-      include: ["lib/security.ts"],
+      include: ["lib/security.ts", "lib/legal-markdown.tsx", "lib/legal-documents.ts"],
       reporter: ["text"],
       thresholds: {
         lines: 90,

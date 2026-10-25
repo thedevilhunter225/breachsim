@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import ipaddress
 from functools import lru_cache
 from urllib.parse import urlparse
 
@@ -110,20 +113,80 @@ class Settings(BaseSettings):
     elevenlabs_model_id: str = "eleven_multilingual_v2"
     #: Voice cloning that mimics an identifiable person is gated behind this flag in
     #: addition to per-persona consent. Instant Voice Cloning requires a paid plan.
-    elevenlabs_allow_voice_cloning: bool = True
+    #: Off unless explicitly enabled, so configuring a provider key never enables cloning.
+    elevenlabs_allow_voice_cloning: bool = False
 
     video_clone_provider: str = "none"  # none | did
     did_api_key: str | None = None
     did_base_url: str = "https://api.d-id.com"
+
+    #: Launch-policy approval for real voice/video cloning in production. The initial
+    #: production release excludes synthetic media, so a production process refuses to
+    #: start with a clone provider configured until this is deliberately set to true.
+    synthetic_media_production_approved: bool = False
 
 
 #: Shipped placeholder. Signing tokens with a publicly-known secret means anyone can
 #: forge an admin token, which defeats every RBAC check in the product.
 INSECURE_SECRET_PLACEHOLDER = "change-me-in-production"
 
+#: SHA-256 fingerprints (see ``encryption_key_fingerprint``) of Fernet keys that were
+#: committed to this repository's git history. The initial commit 2578f4b shipped one as
+#: the ENCRYPTION_KEY default in backend/app/core/config.py, .env.example and
+#: docker-compose.yml; fba4490 removed it, but anyone with a clone can still read it and
+#: decrypt every field it protected. Production refuses these keys and other environments
+#: log a SECURITY warning. Store digests only: never put a key's text in this file.
+COMPROMISED_ENCRYPTION_KEY_SHA256 = frozenset(
+    {
+        "61c9dc46c03199e3968e3e7afc84d6a33bc0af82d1272dafc2d91262e6a62374",
+    }
+)
+
+#: Hostnames that only make sense on a developer machine or in the test client. A production
+#: Host or CORS allowlist containing one trusts requests that never passed through the edge.
+LOOPBACK_OR_TEST_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0", "testserver"})
+
 
 def is_production_environment(environment: str) -> bool:
     return environment.lower() in {"production", "prod"}
+
+
+def encryption_key_fingerprint(key: str) -> str | None:
+    """Return the SHA-256 hex digest of a Fernet key's canonical text, or None if it is not one.
+
+    Fernet decodes keys leniently (whitespace and characters outside the base64 alphabet are
+    dropped), so the key is canonicalised first. Otherwise a reformatted copy of a denylisted
+    key would decrypt the same data while slipping past the denylist.
+    """
+    try:
+        raw = base64.urlsafe_b64decode(key.encode("utf-8"))
+    except ValueError:
+        return None
+    if len(raw) != 32:
+        return None
+    return hashlib.sha256(base64.urlsafe_b64encode(raw)).hexdigest()
+
+
+def is_compromised_encryption_key(key: str | None) -> bool:
+    if not key:
+        return False
+    return encryption_key_fingerprint(key) in COMPROMISED_ENCRYPTION_KEY_SHA256
+
+
+def is_loopback_or_test_host(host: str | None) -> bool:
+    """True for localhost, loopback/unspecified addresses and the test client, with or without a port."""
+    name = (host or "").strip().lower().rstrip(".")
+    if name.startswith("[") and "]" in name:
+        name = name[: name.index("]") + 1]  # "[::1]:8000" -> "[::1]"
+    elif name.count(":") == 1:
+        name = name.partition(":")[0]  # "localhost:3000" -> "localhost"
+    if name in LOOPBACK_OR_TEST_HOSTNAMES or name.endswith(".localhost"):
+        return True
+    try:
+        address = ipaddress.ip_address(name.strip("[]"))
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_unspecified
 
 
 def validate_production_settings(resolved: Settings) -> None:
@@ -141,6 +204,12 @@ def validate_production_settings(resolved: Settings) -> None:
             Fernet(resolved.encryption_key.encode("utf-8"))
         except (TypeError, ValueError):
             errors.append("ENCRYPTION_KEY must be a valid Fernet key")
+        else:
+            if is_compromised_encryption_key(resolved.encryption_key):
+                errors.append(
+                    "ENCRYPTION_KEY was committed to this repository's git history and is compromised; "
+                    "generate a new Fernet key and re-encrypt existing data"
+                )
     if resolved.database_url.startswith("sqlite"):
         errors.append("DATABASE_URL must use PostgreSQL, not SQLite")
     else:
@@ -172,8 +241,18 @@ def validate_production_settings(resolved: Settings) -> None:
         errors.append("CORS_ORIGINS must contain explicit HTTPS origins")
     elif any(urlparse(origin).scheme != "https" for origin in resolved.cors_origins):
         errors.append("every CORS origin must use HTTPS")
+    loopback_origins = [
+        origin for origin in resolved.cors_origins if is_loopback_or_test_host(urlparse(origin).hostname)
+    ]
+    if loopback_origins:
+        errors.append(
+            f"CORS_ORIGINS must not contain loopback or test hostnames (found: {', '.join(loopback_origins)})"
+        )
     if not resolved.trusted_hosts or "*" in resolved.trusted_hosts:
         errors.append("TRUSTED_HOSTS must contain explicit hostnames")
+    loopback_hosts = [host for host in resolved.trusted_hosts if is_loopback_or_test_host(host)]
+    if loopback_hosts:
+        errors.append(f"TRUSTED_HOSTS must not contain loopback or test hostnames (found: {', '.join(loopback_hosts)})")
     if resolved.api_docs_enabled:
         errors.append("API_DOCS_ENABLED must be false")
     if resolved.email_delivery_backend != "service_bus":
@@ -200,6 +279,16 @@ def validate_production_settings(resolved: Settings) -> None:
         errors.append("TOGETHER_TIMEOUT_SECONDS must be between 1 and 120")
     if not 0 <= resolved.together_max_retries <= 5:
         errors.append("TOGETHER_MAX_RETRIES must be between 0 and 5")
+    clone_providers = {
+        (provider or "none").strip().lower()
+        for provider in (resolved.voice_clone_provider, resolved.video_clone_provider)
+    }
+    if not resolved.synthetic_media_production_approved and clone_providers != {"none"}:
+        errors.append(
+            "VOICE_CLONE_PROVIDER and VIDEO_CLONE_PROVIDER must both be none: the initial production launch "
+            "policy excludes synthetic voice/video cloning (set SYNTHETIC_MEDIA_PRODUCTION_APPROVED=true only "
+            "after that policy is formally revised and approved)"
+        )
     if resolved.voice_clone_provider not in {"none", "elevenlabs"}:
         errors.append("VOICE_CLONE_PROVIDER must be none or elevenlabs")
     if resolved.video_clone_provider not in {"none", "did"}:
@@ -226,3 +315,8 @@ settings = get_settings()
 def secret_key_is_insecure() -> bool:
     """True when the JWT secret would not be safe outside local development."""
     return settings.secret_key == INSECURE_SECRET_PLACEHOLDER or len(settings.secret_key) < 32
+
+
+def encryption_key_is_compromised() -> bool:
+    """True when ENCRYPTION_KEY is a key that was published in this repository's git history."""
+    return is_compromised_encryption_key(settings.encryption_key)

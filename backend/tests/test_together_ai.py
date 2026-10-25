@@ -198,3 +198,17 @@ def test_together_reports_when_legacy_model_requires_a_dedicated_endpoint():
         )
         with pytest.raises(LLMProviderError, match="requires an active dedicated endpoint"):
             provider.generate(scenario_prompt())
+
+
+def test_validation_fallback_names_the_failing_field_without_content():
+    result = valid_model_result()
+    result["cta_text"] = "x" * 150
+    result["unexpected_field"] = "Leaked draft text"
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: together_response(result))) as client:
+        with pytest.raises(LLMProviderError) as raised:
+            TogetherAIProvider(api_key="test-key", client=client).generate(scenario_prompt())
+    message = str(raised.value)
+    assert "cta_text" in message
+    assert "unexpected_field" in message
+    assert "Leaked draft text" not in message

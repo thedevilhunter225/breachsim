@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, time, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,20 +9,22 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_roles
 from app.core.config import is_production_environment, settings
 from app.db.session import get_db
-from app.models.entities import ImpersonationPersona, Organization
+from app.models.entities import AuditLog, ImpersonationPersona, Organization
 from app.models.enums import PersonaStatus, UserRole
 from app.schemas.integrations import (
     EmailIntegrationRead,
     EmailIntegrationUpdate,
     ImpersonationSettingsRead,
     ImpersonationSettingsUpdate,
+    SmsDemoSendRead,
+    SmsDemoSendRequest,
     SmsIntegrationRead,
     SmsIntegrationUpdate,
 )
 from app.services.audit import audit_log
 from app.services.email_integration import serialize_email_integration, update_email_integration
 from app.services.media import video_provider_status, voice_provider_status
-from app.services.sms_integration import serialize_sms_integration, update_sms_integration
+from app.services.sms_integration import send_android_demo_sms, serialize_sms_integration, update_sms_integration
 
 router = APIRouter()
 
@@ -97,6 +100,41 @@ def put_sms_integration(
     db.commit()
     db.refresh(org)
     return serialize_sms_integration(org)
+
+
+@router.post("/integrations/sms/demo-send", response_model=SmsDemoSendRead)
+def send_sms_demo(
+    payload: SmsDemoSendRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user=Depends(require_roles(UserRole.ADMIN)),
+):
+    if is_production_environment(settings.environment):
+        raise HTTPException(status_code=409, detail="Personal-SIM SMS demos are local-only")
+    org = db.query(Organization).filter(Organization.id == user.organization_id).first()
+    today_start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
+    sent_today = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.organization_id == user.organization_id,
+            AuditLog.action == "integration.sms.demo_send",
+            AuditLog.occurred_at >= today_start,
+        )
+        .count()
+    )
+    if sent_today >= 4:
+        raise HTTPException(status_code=429, detail="The Android demo is limited to four SMS per UTC day")
+    message_id = send_android_demo_sms(org=org, recipient=payload.recipient)
+    audit_log(
+        db,
+        organization_id=user.organization_id,
+        user_id=user.id,
+        action="integration.sms.demo_send",
+        resource_type="organization",
+        resource_id=str(org.id),
+        details={"message_id": message_id, "status": "queued"},
+    )
+    db.commit()
+    return SmsDemoSendRead(message_id=message_id)
 
 
 def _serialize_impersonation(db: Session, org: Organization) -> ImpersonationSettingsRead:

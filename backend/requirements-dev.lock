@@ -35,7 +35,7 @@ cachecontrol==0.14.4
     # via
     #   cachecontrol
     #   pip-audit
-certifi==2026.7.22
+certifi==2026.10.19
     # via
     #   httpcore
     #   httpx
@@ -136,7 +136,7 @@ packaging==26.3
     #   pip-audit
     #   pip-requirements-parser
     #   pytest
-pillow==12.3.0
+pillow==13.0.0
     # via qrcode
 pip-api==0.0.34
     # via pip-audit
@@ -174,7 +174,7 @@ pygments==2.21.0
     # via
     #   pytest
     #   rich
-pyjwt==2.13.0
+pyjwt==2.15.1
     # via
     #   breachsim-backend (pyproject.toml)
     #   msal
@@ -257,7 +257,7 @@ tzdata==2026.3
     # via
     #   faker
     #   psycopg
-urllib3==2.7.0
+urllib3==2.8.0
     # via requests
 uvicorn==0.52.3
     # via breachsim-backend (pyproject.toml)

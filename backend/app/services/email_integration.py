@@ -67,7 +67,7 @@ def send_lab_email(
     subject: str,
     body_text: str,
     cta_url: str,
-    cta_text: str = "clickhere",
+    cta_text: str = "Review securely",
     html_body: str | None = None,
     attachments: list[tuple[str, bytes, str, str]] | None = None,
     inline_images: list[tuple[str | None, bytes, str, str, str]] | None = None,

@@ -222,7 +222,7 @@ export function VoiceCallSimulator({ token }: { token: string }) {
   if (phase === "debrief" && summary) {
     return (
       <Stage wide>
-        <SimulationDebrief summary={summary} />
+        <SimulationDebrief summary={summary} portalToken={token} />
       </Stage>
     );
   }

@@ -15,7 +15,7 @@ provider layer.
 | # | Feature | Status | Notes |
 |---|---|---|---|
 | 1.1 | **Email phishing** | Working | SMTP send to allowlisted mailboxes, tracked link |
-| 1.2 | **SMS / smishing** | Working (sandbox) | Full pipeline; **real carrier send needs a paid gateway** |
+| 1.2 | **SMS / smishing** | Working (sandbox) | Campaigns preview in sandbox; a separate local Android/SIM adapter sends a fixed, link-free demo SMS to up to four allowlisted numbers |
 | 1.3 | **QR phishing** | Working | Tracked scan code embedded in the email body; no downloadable attachment |
 | 1.4 | **Voice / vishing** | Working | Branching call, spoofed caller ID, in-browser speech |
 | 1.5 | **Deepfake impersonation** | Working | Voice-note or video message from a consented persona |
@@ -230,7 +230,7 @@ provider layer.
 
 | Capability | Service | Without it |
 |---|---|---|
-| Real outbound SMS | Twilio-compatible gateway | SMS runs as a labelled sandbox preview — content, tracking, scoring and reporting all still work |
+| Enterprise outbound SMS | Approved carrier/A2P provider | SMS campaigns remain sandbox-only; a local Android/SIM adapter is available for a fixed, link-free delivery demo |
 
 Optional realism upgrades, none required:
 

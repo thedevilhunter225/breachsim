@@ -31,6 +31,24 @@ WEIGHTS = {
 }
 
 
+def risk_trend(db: Session, employee: Employee) -> str:
+    """Direction of an employee's score from their first recorded score to the latest."""
+    scores = [
+        row.score
+        for row in db.query(RiskScore.score)
+        .filter(RiskScore.employee_id == employee.id)
+        .order_by(RiskScore.calculated_at.asc())
+        .all()
+    ]
+    first_score = scores[0] if scores else employee.risk_score
+    last_score = scores[-1] if scores else employee.risk_score
+    if last_score < first_score:
+        return "improving"
+    if last_score > first_score:
+        return "worsening"
+    return "stable"
+
+
 def recalculate_employee_risk(db: Session, employee: Employee) -> RiskScore:
     events = db.query(EventLog).filter(EventLog.employee_id == employee.id).all()
     completions = db.query(TrainingCompletion).filter(TrainingCompletion.employee_id == employee.id).count()

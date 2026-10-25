@@ -58,6 +58,10 @@ class CampaignRead(BaseModel):
     scenario_count: int = 0
     landing_domain_id: uuid.UUID | None = None
     email_connection_id: uuid.UUID | None = None
+    # Who has approved so far, so the UI can show "1 of 2 approvals" and not offer the
+    # first approver a second, refused approval.
+    approved_by_user_id: uuid.UUID | None = None
+    second_approved_by_user_id: uuid.UUID | None = None
 
 
 class DeliveryAttemptRead(BaseModel):
@@ -76,3 +80,5 @@ class DeliveryAttemptRead(BaseModel):
     retry_count: int = 0
     next_attempt_at: datetime | None = None
     last_error_code: str | None = None
+    #: When the employee's link stops working, so operators are not handed dead links.
+    link_expires_at: datetime | None = None

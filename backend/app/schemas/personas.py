@@ -55,6 +55,7 @@ class PersonaRead(BaseModel):
     synthetic_disclosure_text: str
     usage_count: int
     created_at: datetime
+    created_by_user_id: uuid.UUID | None = None
     approved_by_user_id: uuid.UUID | None
     voice_clone_provider: str | None = None
     voice_clone_ref: str | None = None

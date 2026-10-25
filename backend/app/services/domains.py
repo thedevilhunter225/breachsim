@@ -57,18 +57,37 @@ def platform_hostname_for(org: Organization) -> str:
 
 
 def ensure_platform_landing_domain(db: Session, org: Organization) -> OrganizationDomain:
-    hostname = platform_hostname_for(org)
-    existing = (
-        db.query(OrganizationDomain)
-        .filter(
-            OrganizationDomain.organization_id == org.id,
-            OrganizationDomain.hostname == hostname,
-            OrganizationDomain.purpose == DomainPurpose.LANDING,
+    preferred = platform_hostname_for(org)
+    candidates = [preferred]
+    if preferred.startswith("localhost"):
+        # Development has one shared localhost root, but (hostname, purpose) is unique, so a
+        # second tenant would fail to provision. Later tenants get <slug>.localhost, which
+        # browsers resolve to loopback (RFC 6761). Production hostnames are already per-slug.
+        candidates.append(f"{org.slug}.{preferred}")
+    for candidate in candidates:
+        existing = (
+            db.query(OrganizationDomain)
+            .filter(
+                OrganizationDomain.organization_id == org.id,
+                OrganizationDomain.hostname == candidate,
+                OrganizationDomain.purpose == DomainPurpose.LANDING,
+            )
+            .first()
         )
-        .first()
+        if existing:
+            return existing
+    hostname = next(
+        (
+            candidate
+            for candidate in candidates
+            if not db.query(OrganizationDomain)
+            .filter(OrganizationDomain.hostname == candidate, OrganizationDomain.purpose == DomainPurpose.LANDING)
+            .first()
+        ),
+        None,
     )
-    if existing:
-        return existing
+    if hostname is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The platform landing hostname is already in use")
     domain = OrganizationDomain(
         organization_id=org.id,
         hostname=hostname,

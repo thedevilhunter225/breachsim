@@ -71,6 +71,19 @@ def _verify_recipient_domain(db: Session, organization_id, email: str) -> None:
         _scim_error("Email is outside the organization's verified recipient domains", status.HTTP_409_CONFLICT)
 
 
+def _ensure_email_available(db: Session, organization_id, email: str, *, employee_id) -> str:
+    """Return the email's blind index, refusing an address another employee already uses."""
+    email_hash = blind_index(email, namespace="employee-email")
+    taken = db.query(Employee).filter(
+        Employee.organization_id == organization_id,
+        Employee.email_blind_index == email_hash,
+        Employee.id != employee_id,
+    ).first()
+    if taken:
+        _scim_error("Another user already has this email", status.HTTP_409_CONFLICT)
+    return email_hash
+
+
 def _scim_user(employee: Employee) -> dict:
     return {
         "schemas": [SCIM_USER_SCHEMA],
@@ -196,8 +209,8 @@ def replace_scim_user(
         _scim_error("User not found", status.HTTP_404_NOT_FOUND)
     email = _primary_email(payload)
     _verify_recipient_domain(db, credential.organization_id, email)
+    employee.email_blind_index = _ensure_email_available(db, credential.organization_id, email, employee_id=employee.id)
     employee.email = email
-    employee.email_blind_index = blind_index(email, namespace="employee-email")
     employee.full_name = _display_name(payload, employee.full_name)
     employee.role_title = str(payload.get("title") or employee.role_title)[:255]
     employee.status = EmployeeStatus.ACTIVE if payload.get("active", True) else EmployeeStatus.INACTIVE
@@ -236,8 +249,10 @@ def patch_scim_user(
         elif path in {"username", "emails"}:
             email = str(value if path == "username" else _primary_email({"emails": value or []})).casefold()
             _verify_recipient_domain(db, credential.organization_id, email)
+            employee.email_blind_index = _ensure_email_available(
+                db, credential.organization_id, email, employee_id=employee.id
+            )
             employee.email = email
-            employee.email_blind_index = blind_index(email, namespace="employee-email")
         elif not path and isinstance(value, dict):
             if "active" in value:
                 employee.status = EmployeeStatus.ACTIVE if value["active"] else EmployeeStatus.INACTIVE

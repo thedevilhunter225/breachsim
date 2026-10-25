@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import Link from "next/link";
 import {
   BadgeCheck,
   CircleAlert,
@@ -47,7 +48,7 @@ const OUTCOME_STYLES: Record<
  * Post-simulation debrief. This is the only point at which the employee is told
  * the exercise was a simulation — disclosing earlier would invalidate the result.
  */
-export function SimulationDebrief({ summary }: { summary: SimulationSummary }) {
+export function SimulationDebrief({ summary, portalToken }: { summary: SimulationSummary; portalToken?: string }) {
   const style = OUTCOME_STYLES[summary.outcome] ?? OUTCOME_STYLES.abandoned;
   const OutcomeIcon = style.icon;
 
@@ -189,6 +190,17 @@ export function SimulationDebrief({ summary }: { summary: SimulationSummary }) {
           {summary.debrief}
         </p>
       ) : null}
+
+      <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-[0.8rem] font-semibold text-white/72">
+        {portalToken ? (
+          <Link href={`/employee-portal#t=${encodeURIComponent(portalToken)}`} className="underline underline-offset-2">
+            Your training and privacy options
+          </Link>
+        ) : null}
+        <Link href="/legal/privacy" className="underline underline-offset-2">
+          Privacy notice
+        </Link>
+      </div>
 
       <p className="pb-4 text-center text-[0.74rem] leading-relaxed text-white/38">
         {summary.safety_notice ??

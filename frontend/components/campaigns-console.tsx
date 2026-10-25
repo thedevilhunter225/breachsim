@@ -27,6 +27,7 @@ import { useSession } from "@/components/session-provider";
 import { DataState } from "@/components/data-state";
 import {
   approveCampaign,
+  completeCampaign,
   createCampaign,
   createCampaignRun,
   deleteCampaign,
@@ -47,6 +48,7 @@ import {
   type EnterpriseEmailConnection,
   type OrganizationDomain,
 } from "@/lib/client-api";
+import { canManageContent, isAdministrator } from "@/lib/roles";
 
 const CHANNELS: Array<{ value: string; label: string; icon: LucideIcon; deliverLabel: string }> = [
   { value: "email", label: "Email", icon: Mail, deliverLabel: "Send live email" },
@@ -75,6 +77,8 @@ function readError(error: unknown): string {
 
 export function CampaignsConsole() {
   const { session } = useSession();
+  const canManage = canManageContent(session);
+  const canApprove = isAdministrator(session);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [attempts, setAttempts] = useState<DeliveryAttempt[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -107,8 +111,9 @@ export function CampaignsConsole() {
       getDeliveryAttempts(session.access_token),
       getEmployees(session.access_token),
       getScenarios(session.access_token),
-      getOrganizationDomains(session.access_token),
-      getEnterpriseEmailConnections(session.access_token),
+      // Read-only roles (auditor) may not list senders or domains; those are only needed to compose.
+      getOrganizationDomains(session.access_token).catch(() => []),
+      getEnterpriseEmailConnections(session.access_token).catch(() => []),
     ]);
     const runRows = (
       await Promise.all(campaignRows.map((campaign) => getCampaignRuns(session.access_token, campaign.id).catch(() => [])))
@@ -149,12 +154,12 @@ export function CampaignsConsole() {
     setForm({ ...form, channel, scenario_id: next, sandbox_mode: channel === "email" || channel === "qr" ? form.sandbox_mode : true });
   }
 
-  async function runAction(key: string, action: () => Promise<unknown>, success: string) {
+  async function runAction<T>(key: string, action: () => Promise<T>, success: string | ((result: T) => string)) {
     setBusy(key);
     setNotice(null);
     try {
-      await action();
-      setNotice({ tone: "ok", text: success });
+      const result = await action();
+      setNotice({ tone: "ok", text: typeof success === "function" ? success(result) : success });
       await loadData();
     } catch (error) {
       setNotice({ tone: "error", text: readError(error) });
@@ -277,9 +282,9 @@ export function CampaignsConsole() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[400px_minmax(0,1fr)]">
+      <div className={canManage ? "grid gap-4 xl:grid-cols-[400px_minmax(0,1fr)]" : "grid gap-4"}>
         {/* Composer */}
-        <section className="card min-w-0 self-start overflow-hidden p-5">
+        {canManage ? <section className="card min-w-0 self-start overflow-hidden p-5">
           <div className="flex flex-wrap items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/10 text-brand-500">
               <Send size={18} />
@@ -484,7 +489,7 @@ export function CampaignsConsole() {
               Create campaign
             </button>
           </div>
-        </section>
+        </section> : null}
 
         {/* Workflow */}
         <section className="min-w-0 space-y-4">
@@ -501,7 +506,7 @@ export function CampaignsConsole() {
               <Rocket className="mx-auto text-subtle" size={30} />
               <p className="mt-3 text-[0.92rem] font-semibold text-ink">No campaigns yet</p>
               <p className="mx-auto mt-1.5 max-w-sm text-[0.83rem] leading-relaxed text-muted">
-                Create one from the composer once you have an approved scenario.
+                {canManage ? "Create one from the composer once you have an approved scenario." : "Campaigns appear here once they are created."}
               </p>
             </div>
           ) : (
@@ -526,7 +531,9 @@ export function CampaignsConsole() {
                         {campaign.requires_second_approval ? (
                           <span className="badge badge-neutral">
                             <ShieldCheck size={11} />
-                            Dual approval
+                            {campaign.status === "pending_approval"
+                              ? `${campaign.approved_by_user_id ? 1 : 0} of 2 approvals`
+                              : "Dual approval"}
                           </span>
                         ) : null}
                       </div>
@@ -549,7 +556,7 @@ export function CampaignsConsole() {
 
                   {attempt ? (
                     <div className="border-b border-line bg-surface-muted p-5">
-                      <AttemptPreview attempt={attempt} onCopy={copyValue} />
+                      <AttemptPreview attempt={attempt} onCopy={copyValue} showLinks={canManage} />
                     </div>
                   ) : null}
 
@@ -567,7 +574,7 @@ export function CampaignsConsole() {
                   ) : null}
 
                   <div className="flex flex-wrap gap-2.5 p-5">
-                    {campaign.status === "draft" ? (
+                    {canManage && campaign.status === "draft" ? (
                       <button
                         type="button"
                         className="btn-secondary btn-sm"
@@ -584,7 +591,9 @@ export function CampaignsConsole() {
                       </button>
                     ) : null}
 
-                    {campaign.status === "pending_approval" ? (
+                    {canApprove &&
+                    campaign.status === "pending_approval" &&
+                    !(campaign.requires_second_approval && campaign.approved_by_user_id === session?.user.id) ? (
                       <button
                         type="button"
                         className="btn-primary btn-sm"
@@ -593,7 +602,10 @@ export function CampaignsConsole() {
                           void runAction(
                             campaign.id,
                             () => approveCampaign(session!.access_token, campaign.id),
-                            "Approval recorded. A second admin may still be required.",
+                            (updated) =>
+                              updated.status === "approved"
+                                ? "Campaign approved and ready to launch."
+                                : "First approval recorded. A different administrator must give the second approval.",
                           )
                         }
                       >
@@ -602,7 +614,7 @@ export function CampaignsConsole() {
                       </button>
                     ) : null}
 
-                    {launchable ? (
+                    {canManage && launchable ? (
                       <button
                         type="button"
                         className="btn-secondary btn-sm"
@@ -619,7 +631,7 @@ export function CampaignsConsole() {
                       </button>
                     ) : null}
 
-                    {deliverable ? (
+                    {canManage && deliverable ? (
                       <button
                         type="button"
                         className="btn-primary btn-sm"
@@ -641,20 +653,42 @@ export function CampaignsConsole() {
                       </button>
                     ) : null}
 
-                    <button
-                      type="button"
-                      className="btn-danger btn-sm ml-auto"
-                      disabled={busy === campaign.id}
-                      onClick={() => void handleDelete(campaign)}
-                      title="Delete this campaign"
-                    >
-                      {busy === campaign.id ? (
-                        <Loader2 size={13} className="animate-spin" />
-                      ) : (
-                        <Trash2 size={13} />
-                      )}
-                      Delete
-                    </button>
+                    {canManage && (campaign.status === "active" || campaign.status === "paused") ? (
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        disabled={busy === campaign.id}
+                        title="Stop further launches and mark this campaign as completed in reports"
+                        onClick={() => {
+                          if (!window.confirm(`Mark "${campaign.name}" as completed? It cannot be launched again.`)) return;
+                          void runAction(
+                            campaign.id,
+                            () => completeCampaign(session!.access_token, campaign.id),
+                            "Campaign completed. Links already sent keep recording responses until they expire.",
+                          );
+                        }}
+                      >
+                        <CheckCircle2 size={13} />
+                        Complete
+                      </button>
+                    ) : null}
+
+                    {canApprove ? (
+                      <button
+                        type="button"
+                        className="btn-danger btn-sm ml-auto"
+                        disabled={busy === campaign.id}
+                        onClick={() => void handleDelete(campaign)}
+                        title="Delete this campaign"
+                      >
+                        {busy === campaign.id ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={13} />
+                        )}
+                        Delete
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               );
@@ -695,7 +729,7 @@ export function CampaignsConsole() {
                     {attempt.preview_payload.subject ?? "Simulation asset"}
                   </div>
                   <div className="mt-3">
-                    <AttemptPreview attempt={attempt} onCopy={copyValue} compact />
+                    <AttemptPreview attempt={attempt} onCopy={copyValue} compact showLinks={canManage} />
                   </div>
                   {attempt.preview_payload.sandbox_reason ? (
                     <p className="mt-3 rounded-lg border border-caution/25 bg-caution/8 px-3 py-2 text-[0.8rem] leading-relaxed text-caution">
@@ -723,14 +757,21 @@ function AttemptPreview({
   attempt,
   onCopy,
   compact = false,
+  showLinks = true,
 }: {
   attempt: DeliveryAttempt;
   onCopy: (value?: string) => void;
   compact?: boolean;
+  /** Exercise links act on the employee's behalf, so read-only roles do not see them. */
+  showLinks?: boolean;
 }) {
   const payload = attempt.preview_payload ?? {};
+  const expired = Boolean(attempt.link_expires_at && new Date(attempt.link_expires_at).getTime() <= Date.now());
 
   if (attempt.channel === "qr") {
+    if (!showLinks) {
+      return <p className="text-[0.8rem] text-muted">The QR code is visible to campaign managers and administrators.</p>;
+    }
     return <QrPosterPreview payload={payload} compact={compact} />;
   }
 
@@ -743,7 +784,7 @@ function AttemptPreview({
           <Row label="Call reason" value={payload.call_reason} />
           <Row label="Decision points" value={payload.script_step_count} />
         </div>
-        <LinkRow label="Call session" url={payload.call_url} onCopy={onCopy} />
+        {showLinks ? <LinkRow label="Call session" url={payload.call_url} onCopy={onCopy} expired={expired} /> : null}
         {payload.delivery_note ? <Note text={payload.delivery_note} /> : null}
       </div>
     );
@@ -758,7 +799,7 @@ function AttemptPreview({
           <Row label="Requested action" value={payload.requested_action} />
           <Row label="Synthetic tells" value={payload.artifact_count} />
         </div>
-        <LinkRow label="Media session" url={payload.media_url} onCopy={onCopy} />
+        {showLinks ? <LinkRow label="Media session" url={payload.media_url} onCopy={onCopy} expired={expired} /> : null}
         {payload.delivery_note ? <Note text={payload.delivery_note} /> : null}
       </div>
     );
@@ -807,7 +848,7 @@ function AttemptPreview({
           {payload.body_copy}
         </p>
       ) : null}
-      <LinkRow label="Tracking link" url={payload.preview_url} onCopy={onCopy} />
+      {showLinks ? <LinkRow label="Tracking link" url={payload.preview_url} onCopy={onCopy} expired={expired} /> : null}
     </div>
   );
 }
@@ -827,24 +868,34 @@ function LinkRow({
   label,
   url,
   onCopy,
+  expired = false,
 }: {
   label: string;
   url?: string;
   onCopy: (value?: string) => void;
+  expired?: boolean;
 }) {
   if (!url) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
       <span className="eyebrow">{label}</span>
-      <span className="numeric min-w-0 flex-1 truncate font-mono text-[0.76rem] text-muted">{url}</span>
-      <button type="button" className="btn-ghost btn-sm" onClick={() => onCopy(url)}>
-        <Copy size={12} />
-        Copy
-      </button>
-      <a href={url} target="_blank" rel="noreferrer" className="btn-ghost btn-sm">
-        <ExternalLink size={12} />
-        Open
-      </a>
+      <span className={clsx("numeric min-w-0 flex-1 truncate font-mono text-[0.76rem] text-muted", expired && "line-through")}>{url}</span>
+      {expired ? (
+        <span className="badge badge-neutral" title="This link no longer opens. Launch the campaign again for fresh links.">
+          Expired
+        </span>
+      ) : (
+        <>
+          <button type="button" className="btn-ghost btn-sm" onClick={() => onCopy(url)}>
+            <Copy size={12} />
+            Copy
+          </button>
+          <a href={url} target="_blank" rel="noreferrer" className="btn-ghost btn-sm">
+            <ExternalLink size={12} />
+            Open
+          </a>
+        </>
+      )}
     </div>
   );
 }

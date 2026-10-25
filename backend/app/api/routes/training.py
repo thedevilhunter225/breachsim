@@ -6,9 +6,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
 from app.models.entities import Employee, TrainingAssignment, TrainingModule
+from app.models.enums import UserRole
 from app.schemas.training import TrainingAssignmentRead, TrainingCompleteRequest, TrainingModuleRead
 from app.services.scoring import recalculate_employee_risk
 from app.services.training import complete_assignment
@@ -38,7 +39,9 @@ def complete_training(
     assignment_id: uuid.UUID,
     payload: TrainingCompleteRequest,
     db: Annotated[Session, Depends(get_db)],
-    user=Depends(get_current_user),
+    # Employees complete their own training through the employee portal. Operators may
+    # record an offline completion, but read-only roles must not change risk scores.
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
 ):
     assignment = (
         db.query(TrainingAssignment)

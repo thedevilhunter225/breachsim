@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -16,6 +17,8 @@ from app.services.channel_content import (
     build_synthetic_media_brief,
     build_voice_script,
 )
+
+logger = logging.getLogger("breachsim.llm")
 
 
 @dataclass
@@ -215,7 +218,14 @@ class TogetherAIProvider:
         try:
             validated = _ScenarioGenerationResponse.model_validate(result).model_dump()
         except ValidationError as exc:
-            raise LLMProviderError("Together returned a response that failed scenario validation") from exc
+            # Name the failing fields and rules (never the generated text) so an operator can
+            # see why a draft fell back to the built-in generator.
+            problems = "; ".join(
+                f"{'.'.join(str(part) for part in error['loc']) or 'response'}: {error['msg']}"
+                for error in exc.errors()[:4]
+            )
+            logger.warning("together_validation_failed", extra={"problems": problems, "model": self.model})
+            raise LLMProviderError(f"Together returned a response that failed scenario validation ({problems})") from exc
         return _normalize_llm_result(validated, prompt, provider_name="together", model_name=self.model)
 
     def _request(self, request_payload: dict) -> dict:

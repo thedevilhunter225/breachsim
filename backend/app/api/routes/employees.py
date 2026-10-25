@@ -4,6 +4,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import ValidationError
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_user, require_roles
@@ -16,6 +17,7 @@ from app.schemas.employees import (
     ContextProfileRead,
     EmployeeCreate,
     EmployeeImportPayload,
+    EmployeeImportRecord,
     EmployeeImportResult,
     EmployeeRead,
     EmployeeUpdate,
@@ -23,6 +25,7 @@ from app.schemas.employees import (
 from app.services.audit import access_log, audit_log
 from app.services.deletion import delete_employee
 from app.services.profiling import build_context_profile
+from app.services.scoring import risk_trend
 
 router = APIRouter()
 
@@ -109,7 +112,15 @@ def import_employees(
     errors: list[dict] = []
     departments = {department.name.lower(): department for department in db.query(Department).filter(Department.organization_id == user.organization_id).all()}
 
-    for index, row in enumerate(payload.rows, start=1):
+    for index, raw_row in enumerate(payload.rows, start=1):
+        try:
+            row = EmployeeImportRecord.model_validate(raw_row)
+        except ValidationError as exc:
+            problems = "; ".join(
+                f"{'.'.join(str(part) for part in error['loc']) or 'row'}: {error['msg']}" for error in exc.errors()
+            )
+            errors.append({"row": index, "error": problems})
+            continue
         department = departments.get(row.department.lower())
         if not department:
             errors.append({"row": index, "error": f"Unknown department {row.department}"})
@@ -196,14 +207,7 @@ def get_employee_report(
     )
 
     latest_risk = risk_scores[-1] if risk_scores else None
-    first_score = risk_scores[0].score if risk_scores else employee.risk_score
-    last_score = latest_risk.score if latest_risk else employee.risk_score
-    if last_score < first_score:
-        trend = "improving"
-    elif last_score > first_score:
-        trend = "worsening"
-    else:
-        trend = "stable"
+    trend = risk_trend(db, employee)
 
     behavior_summary = {
         "opened_emails": sum(1 for event in all_events if event.event_type == EventType.OPENED_EMAIL),
@@ -270,7 +274,7 @@ def update_employee(
     if payload.email is not None:
         employee.email_blind_index = blind_index(str(payload.email), namespace="employee-email")
     build_context_profile(db, employee)
-    audit_log(db, organization_id=user.organization_id, user_id=user.id, action="employee.update", resource_type="employee", resource_id=str(employee.id), details=payload.model_dump(exclude_none=True, mode="json"))
+    audit_log(db, organization_id=user.organization_id, user_id=user.id, action="employee.update", resource_type="employee", resource_id=str(employee.id), details={"changed_fields": sorted(payload.model_dump(exclude_none=True))})
     db.commit()
     db.refresh(employee)
     return serialize_employee(employee)
@@ -313,7 +317,8 @@ def update_consent(
 def generate_profile(
     employee_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],
-    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER, UserRole.AUDITOR)),
+    # Writes a new profile version; auditors keep read-only access.
+    user=Depends(require_roles(UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)),
 ) -> ContextProfileRead:
     employee = (
         db.query(Employee)

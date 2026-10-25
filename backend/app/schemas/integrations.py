@@ -47,6 +47,15 @@ class SmsIntegrationUpdate(BaseModel):
     sms_recipient_allowlist: list[str] = Field(default_factory=list)
 
 
+class SmsDemoSendRequest(BaseModel):
+    recipient: str
+
+
+class SmsDemoSendRead(BaseModel):
+    message_id: str
+    status: str = "queued"
+
+
 class ImpersonationSettingsRead(BaseModel):
     impersonation_enabled: bool
     impersonation_disclosure_text: str

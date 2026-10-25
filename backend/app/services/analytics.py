@@ -13,6 +13,7 @@ from app.models.entities import (
     Department,
     Employee,
     EventLog,
+    Policy,
     RiskScore,
     Scenario,
     TrainingCompletion,
@@ -297,6 +298,9 @@ def build_adaptive_recommendations(
 ) -> list[AdaptiveRecommendation]:
     risky_events = RISKY_EVENT_TYPES
     positive_events = PROTECTIVE_EVENT_TYPES
+    # A recommendation must be generatable: only suggest themes this organization permits.
+    policy = db.query(Policy).filter(Policy.organization_id == organization_id).first()
+    permitted_themes = list(policy.allowed_themes) if policy and policy.allowed_themes else []
 
     delivery_ids = [event.delivery_attempt_id for event in events if event.delivery_attempt_id]
     attempts = (
@@ -340,6 +344,8 @@ def build_adaptive_recommendations(
         weak_channel = channel_counter.most_common(1)[0][0] if channel_counter else _fallback_channel(employee)
         weak_triggers = [trigger for trigger, _ in trigger_counter.most_common(3)] or _fallback_triggers(employee, weak_channel)
         recommended_theme = _theme_for_weakness(employee, weak_channel, weak_triggers)
+        if permitted_themes and recommended_theme not in permitted_themes:
+            recommended_theme = permitted_themes[0]
         recommended_channel = weak_channel
         recommended_difficulty = _difficulty_for_employee(employee, len(risky), len(positives))
         likelihood = _estimate_fall_likelihood(employee.risk_score, len(risky), len(positives), trigger_counter)

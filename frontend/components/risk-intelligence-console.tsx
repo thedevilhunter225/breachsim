@@ -17,6 +17,7 @@ import {
   getRiskIntelligence,
   RiskIntelligenceData,
 } from "@/lib/client-api";
+import { latestPerDay } from "@/lib/series";
 
 export function RiskIntelligenceConsole() {
   const { session } = useSession();
@@ -304,7 +305,7 @@ export function RiskIntelligenceConsole() {
                       </div>
                       <div className="mt-4">
                         {employeeReport.risk_history.length ? (
-                          <TrendChart data={employeeReport.risk_history.map((point) => ({ date: point.date, value: point.score }))} />
+                          <TrendChart data={latestPerDay(employeeReport.risk_history)} />
                         ) : (
                           <EmptyPlotMessage message="No score history exists yet. Once a simulation event is tracked, the chart begins plotting." />
                         )}

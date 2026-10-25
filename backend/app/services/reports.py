@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import html
 import io
+import json
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Any
@@ -74,6 +75,23 @@ def _record(db: Session, *, organization_id, user_id, report_type: str, fmt: str
 # Audit CSV
 # --------------------------------------------------------------------------------------
 
+def audit_actor_names(db: Session, organization_id) -> dict[str, str]:
+    return {
+        str(user.id): user.full_name
+        for user in db.query(User).filter(User.organization_id == organization_id).all()
+    }
+
+
+def audit_actor_label(row: AuditLog, actor_names: dict[str, str]) -> str:
+    """Who performed an audited action, in words an auditor can read."""
+    if row.user_id is not None:
+        return actor_names.get(str(row.user_id), "Former operator")
+    if row.action.startswith("employee."):
+        # Opt-out and deletion requests made by the employee through the portal.
+        return "Employee (self-service)"
+    return "System"
+
+
 def build_audit_csv(db: Session, organization_id) -> str:
     rows = (
         db.query(AuditLog)
@@ -81,10 +99,7 @@ def build_audit_csv(db: Session, organization_id) -> str:
         .order_by(AuditLog.occurred_at.desc())
         .all()
     )
-    actor_names = {
-        str(user.id): user.full_name
-        for user in db.query(User).filter(User.organization_id == organization_id).all()
-    }
+    actor_names = audit_actor_names(db, organization_id)
 
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
@@ -93,11 +108,12 @@ def build_audit_csv(db: Session, organization_id) -> str:
         writer.writerow(
             [
                 _fmt(row.occurred_at),
-                actor_names.get(str(row.user_id), "system"),
+                audit_actor_label(row, actor_names),
                 row.action,
                 row.resource_type,
                 row.resource_id or "",
-                row.details,
+                # JSON, not a Python repr, so the export can be parsed by other tools.
+                json.dumps(row.details or {}, sort_keys=True, default=str),
             ]
         )
     return buffer.getvalue()

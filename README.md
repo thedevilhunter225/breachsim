@@ -97,7 +97,7 @@ npm run dev
 Create `frontend/.env.local`:
 
 ```
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 NEXT_PUBLIC_DEMO_MODE=true
 ```
 
@@ -261,6 +261,7 @@ remain disabled in the initial production release.
 - [Demo script](docs/demo/presentation-script.md)
 - [Foundation and phased plan](docs/foundation.md)
 - [Production deployment and operations](docs/production-deployment.md)
+- [Legal templates (draft, pending counsel review)](docs/legal/README.md)
 
 ---
 

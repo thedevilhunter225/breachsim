@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from tests.conftest import login
+
 
 def test_html_qr_uses_a_square_fixed_cell_grid():
     from app.services.delivery import _qr_html_table
@@ -31,7 +33,8 @@ def _approved_qr_campaign(client, admin_headers, *, name: str, sandbox_mode: boo
     )
     assert scenario_response.status_code == 201, scenario_response.text
     scenario_id = scenario_response.json()["id"]
-    assert client.post(f"/api/v1/scenarios/{scenario_id}/approve", headers=admin_headers).status_code == 200
+    reviewer = login(client, "reviewer@breachsim-lab.com", "Reviewer123!")  # two-person rule
+    assert client.post(f"/api/v1/scenarios/{scenario_id}/approve", headers=reviewer).status_code == 200
 
     campaign_response = client.post(
         "/api/v1/campaigns",

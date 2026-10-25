@@ -12,6 +12,8 @@ from app.models.entities import AccessLog, AuditLog, Campaign, Organization
 from app.models.enums import UserRole
 from app.services.audit import verify_audit_chain
 from app.services.reports import (
+    audit_actor_label,
+    audit_actor_names,
     build_audit_csv,
     build_campaign_csv,
     build_campaign_html,
@@ -34,9 +36,11 @@ def _attachment(content: str, *, media_type: str, filename: str) -> Response:
 @router.get("/audit-logs")
 def list_audit_logs(db: Annotated[Session, Depends(get_db)], user=Depends(require_roles(UserRole.ADMIN, UserRole.AUDITOR))):
     rows = db.query(AuditLog).filter(AuditLog.organization_id == user.organization_id).order_by(AuditLog.occurred_at.desc()).all()
+    actor_names = audit_actor_names(db, user.organization_id)
     return [
         {
             "id": str(row.id),
+            "actor": audit_actor_label(row, actor_names),
             "action": row.action,
             "resource_type": row.resource_type,
             "resource_id": row.resource_id,
