@@ -9,7 +9,9 @@
 # production check (validate_production_settings in backend/app/core/config.py), which would
 # demand Azure Service Bus, Key Vault, Blob storage and Front Door. Every security-relevant
 # value is still set to a production-grade setting here (strong secrets, HTTPS everywhere,
-# secure cookies, locked TRUSTED_HOSTS/CORS, API docs off). In dev mode the backend creates
+# secure cookies, locked TRUSTED_HOSTS/CORS, API docs off, sign-in throttling, mandatory MFA
+# for administrators). The last two are off by default outside production, so this file
+# switches them on explicitly below. In dev mode the backend creates
 # its schema and the four default operator accounts on first startup — no migration or
 # bootstrap job is required.
 #
@@ -33,11 +35,22 @@ x-backend-environment: &backend-environment
   # from these, so they must be your real public HTTPS domain.
   FRONTEND_BASE_URL: https://${DOMAIN:?set DOMAIN}
   PUBLIC_URL_SCHEME: https
+  # Development mode otherwise defaults campaign-run links and QR assets to localhost:8000.
+  PUBLIC_DEV_BASE_URL: https://${DOMAIN}
   PLATFORM_TRAINING_DOMAIN: ${DOMAIN}
   CORS_ORIGINS: '["https://${DOMAIN}"]'
   # Production rejects loopback/test hostnames; the backend healthcheck sends Host: backend.
   TRUSTED_HOSTS: '["${DOMAIN}","backend"]'
   SESSION_COOKIE_SECURE: "true"
+  # Development mode leaves both of these off; an internet-facing instance needs both.
+  # Throttling counts sign-in attempts per client address in the Redis service below and
+  # fails closed: without Redis, sign-in returns 503 and /health/ready reports not ready.
+  RATE_LIMIT_ENABLED: "true"
+  LOGIN_RATE_LIMIT_COUNT: ${LOGIN_RATE_LIMIT_COUNT:-10}
+  LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${LOGIN_RATE_LIMIT_WINDOW_SECONDS:-300}
+  # The admin accounts confirm each sign-in with an authenticator app. An account that has
+  # not enrolled is walked through setup on the login page at its next sign-in.
+  REQUIRE_PRIVILEGED_MFA: ${REQUIRE_PRIVILEGED_MFA:-true}
   ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
   API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
   LOG_JSON: "true"

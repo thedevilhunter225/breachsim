@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     login_rate_limit_window_seconds: int = 300
     public_rate_limit_count: int = 120
     public_rate_limit_window_seconds: int = 60
+    #: Sign-in and public-endpoint throttling is always on in production. Set this to keep
+    #: it on for any other instance that is reachable from the internet, such as the public
+    #: demo stack. It uses the Redis at REDIS_URL and fails closed when Redis is down.
+    rate_limit_enabled: bool = False
+    #: Administrators and platform operators must use MFA in production. Set this to
+    #: require the same on any other instance that is reachable from the internet. An
+    #: account that has not enrolled yet is walked through setup at its next sign-in.
+    require_privileged_mfa: bool = False
     demo_org_name: str = "Northwind Financial Labs"
     demo_org_slug: str = "northwind-financial-labs"
     seed_demo_content: bool = False
@@ -310,6 +318,16 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+def rate_limiting_enabled() -> bool:
+    """Whether sign-in and public endpoints are throttled: always in production, opt-in elsewhere."""
+    return is_production_environment(settings.environment) or settings.rate_limit_enabled
+
+
+def privileged_mfa_required() -> bool:
+    """Whether administrators and platform operators must sign in with MFA."""
+    return is_production_environment(settings.environment) or settings.require_privileged_mfa
 
 
 def secret_key_is_insecure() -> bool:

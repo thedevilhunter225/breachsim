@@ -15,10 +15,19 @@ class MfaEnrollRequest(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class MfaSetupRequest(BaseModel):
+    """First sign-in for an account that must use MFA: the password stands in for a session."""
+
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=1024)
+
+
 class MfaEnrollResponse(BaseModel):
     secret: str
     provisioning_uri: str
     recovery_codes: list[str]
+    #: The provisioning URI as a scannable PNG, for authenticator apps that read a QR code.
+    qr_image_data_url: str | None = None
 
 
 class UserSummary(BaseModel):

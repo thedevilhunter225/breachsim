@@ -27,6 +27,38 @@ from app.services.session_cookies import set_session_cookies
 router = APIRouter()
 
 
+def _organization_has_platform_operator(db: Session, organization_id) -> bool:
+    return (
+        db.query(User.id)
+        .join(UserRoleLink, UserRoleLink.user_id == User.id)
+        .join(Role, Role.id == UserRoleLink.role_id)
+        .filter(
+            User.organization_id == organization_id,
+            User.is_active.is_(True),
+            Role.name == UserRole.PLATFORM_OPERATOR,
+        )
+        .first()
+        is not None
+    )
+
+
+def roles_from_group_claims(db: Session, connection: SsoConnection, groups: set[str]) -> set[UserRole]:
+    """Roles a provisioned user gains from the identity provider's group claims."""
+    mapped_roles = {
+        UserRole(role_name)
+        for group, role_name in (connection.group_role_mappings or {}).items()
+        if group in groups
+    }
+    if UserRole.PLATFORM_OPERATOR in mapped_roles and not _organization_has_platform_operator(
+        db, connection.organization_id
+    ):
+        # Cross-tenant access never arrives through a tenant's own identity provider. The
+        # role only spreads inside an organization that already holds it, so a mapping
+        # stored before the connection API refused it cannot be used either.
+        mapped_roles.discard(UserRole.PLATFORM_OPERATOR)
+    return mapped_roles
+
+
 def _discovery(connection: SsoConnection) -> dict:
     try:
         response = httpx.get(
@@ -175,11 +207,7 @@ def sso_callback(
     user.external_subject = subject
 
     groups = {str(group) for group in claims.get("groups", [])}
-    mapped_roles = {
-        UserRole(role_name)
-        for group, role_name in connection.group_role_mappings.items()
-        if group in groups
-    }
+    mapped_roles = roles_from_group_claims(db, connection, groups)
     for role_name in mapped_roles:
         role = db.query(Role).filter(Role.name == role_name).first()
         if role and not any(link.role_id == role.id for link in user.roles):

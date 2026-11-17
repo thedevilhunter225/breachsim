@@ -23,7 +23,10 @@ HTTPS certificates are automatic and free (Caddy + Let's Encrypt). No Azure acco
 ## 1. Point your domain at the server
 
 Create a DNS **A record** for the hostname you'll use (apex `example.com` or a subdomain like
-`breachsim.example.com`) pointing at the VM's public IPv4 address. Wait for it to resolve:
+`breachsim.example.com`) pointing at the VM's public IPv4 address. For an apex domain, also add
+`CNAME www → example.com`; Caddy gets a certificate for `www` and redirects it to the apex. If
+your hostname is a subdomain with no `www` record, delete the `www.{$DOMAIN}` block at the end of
+`infra/Caddyfile.demo`. Wait for it to resolve:
 
 ```bash
 dig +short breachsim.example.com
@@ -61,6 +64,8 @@ python3 -c "import secrets; print(secrets.token_urlsafe(24))"
 
 Set `DOMAIN` to the hostname from step 1. For real LLM scenarios, set `AI_PROVIDER=together`
 and paste a `TOGETHER_API_KEY`; otherwise leave `AI_PROVIDER=rule_based`.
+The Compose stack also sets `PUBLIC_DEV_BASE_URL` to `https://$DOMAIN`, so newly created
+campaign-run email links and QR image URLs point to the public hostname rather than localhost.
 
 > If `python3` isn't on the VM, run the one-liners inside Docker instead, e.g.
 > `docker run --rm python:3.12-slim python -c "import secrets; print(secrets.token_urlsafe(48))"`.
@@ -84,7 +89,7 @@ open `https://your-domain`.
 
 ## 5. Sign in and run a campaign
 
-Seeded operator accounts (created on first boot; no MFA in this mode):
+Seeded operator accounts (created on first boot):
 
 | Role | Email | Password |
 |---|---|---|
@@ -95,6 +100,23 @@ Seeded operator accounts (created on first boot; no MFA in this mode):
 
 > **Change these passwords immediately** — this instance is on the public internet. Two admin
 > accounts exist because creation and approval require different people (two‑person rule).
+
+**Sign-in protection.** Development mode leaves sign-in throttling and mandatory MFA off, so
+the Compose stack turns both back on:
+
+- `RATE_LIMIT_ENABLED=true` limits each client address to 10 sign-in attempts per 5 minutes
+  (`LOGIN_RATE_LIMIT_COUNT` / `LOGIN_RATE_LIMIT_WINDOW_SECONDS`). It uses the stack's Redis and
+  fails closed: if Redis is down, sign-in returns 503 and `/health/ready` reports not ready.
+- `REQUIRE_PRIVILEGED_MFA=true` makes the two admin accounts confirm each sign-in with an
+  authenticator app. The first sign-in after this is enabled shows a setup step on the login
+  page: scan the QR code (or type the key), save the recovery codes, enter a 6-digit code.
+  Nothing is switched on until that first code is accepted, so an interrupted setup can simply
+  be started again. Do it for both admin accounts right after deploying, because until an
+  account has enrolled, its password alone is enough to enrol it. The manager and auditor
+  accounts are not affected.
+
+To run a closed demo without the authenticator step, set `REQUIRE_PRIVILEGED_MFA=false` in
+`.env.demo` and bring the stack up again. Leave throttling on.
 
 Fastest way to get working public links to test: with the stack up, run the end‑to‑end seed
 against the live API (no guardrail is bypassed):
@@ -155,12 +177,17 @@ Data persists in the `postgres_data`, `media_data` and `report_data` Docker volu
   `/qr-assets` must route to the backend (see `infra/Caddyfile.demo`).
 - **"Invalid host" on a link** — `DOMAIN` in `.env.demo` must exactly match the hostname you
   open in the browser.
+- **Sign-in returns "Too many requests"** — more than 10 attempts from one address in 5 minutes.
+  Wait for the window to pass, or raise `LOGIN_RATE_LIMIT_COUNT` for a classroom on one network.
+- **Sign-in returns "Security rate-limit service is unavailable"** — Redis is not reachable.
+  Check `docker compose ... ps redis` and `REDIS_PASSWORD`.
 
 ## How this differs from the production stack
 
 | | This demo stack | Production (Azure) |
 |---|---|---|
 | Environment mode | `development` (hardened) | `production` (fail‑closed) |
+| Sign-in throttling and admin MFA | Switched on by the Compose file | Always on |
 | Edge / TLS | Caddy on the VM | Front Door Premium + WAF |
 | Delivery queue | In‑DB transactional outbox | Azure Service Bus |
 | Secrets | `.env.demo` on the host | Azure Key Vault |

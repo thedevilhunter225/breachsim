@@ -47,3 +47,9 @@
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
     }
 }
+
+# www.<domain> -> <domain>. Needs a DNS record for www (e.g. CNAME www -> your domain); Caddy
+# gets its own certificate for it. Delete this block if DOMAIN is a subdomain with no www record.
+www.{$DOMAIN} {
+    redir https://{$DOMAIN}{uri} permanent
+}

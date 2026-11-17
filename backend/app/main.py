@@ -34,7 +34,13 @@ from app.api.routes import (
     training,
     users,
 )
-from app.core.config import encryption_key_is_compromised, is_production_environment, secret_key_is_insecure, settings
+from app.core.config import (
+    encryption_key_is_compromised,
+    is_production_environment,
+    rate_limiting_enabled,
+    secret_key_is_insecure,
+    settings,
+)
 from app.core.rate_limit import RateLimitMiddleware
 from app.db.session import engine, init_db
 
@@ -161,7 +167,9 @@ def health_ready():
     except Exception:
         checks["database"] = "unavailable"
 
-    if is_production_environment(settings.environment):
+    if rate_limiting_enabled():
+        # The limiter fails closed without Redis, so an instance that throttles sign-in
+        # is not ready to serve until Redis answers.
         redis = Redis.from_url(settings.redis_url, socket_connect_timeout=1, socket_timeout=1)
         try:
             redis.ping()

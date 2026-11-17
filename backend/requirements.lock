@@ -57,7 +57,7 @@ cryptography==50.0.0
     #   joserfc
     #   msal
     #   pyjwt
-dnspython==2.8.0
+dnspython==2.9.2
     # via
     #   breachsim-backend (pyproject.toml)
     #   email-validator
@@ -90,7 +90,7 @@ isodate==0.7.2
     #   azure-keyvault-secrets
     #   azure-servicebus
     #   azure-storage-blob
-joserfc==1.7.4
+joserfc==1.7.7
     # via breachsim-backend (pyproject.toml)
 mako==1.4.1
     # via alembic
@@ -108,7 +108,7 @@ psycopg==3.3.4
     # via breachsim-backend (pyproject.toml)
 psycopg-binary==3.3.4
     # via psycopg
-pyasn1==0.6.4
+pyasn1==0.6.5
     # via pyasn1-modules
 pyasn1-modules==0.4.2
     # via google-auth

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_operator, require_roles
 from app.core.crypto import blind_index
 from app.db.session import get_db
 from app.models.entities import ConsentRecord, Department, Employee, EventLog, RiskScore, TrainingAssignment
@@ -54,7 +54,7 @@ def serialize_employee(employee: Employee) -> EmployeeRead:
 @router.get("/employees", response_model=list[EmployeeRead])
 def list_employees(
     db: Annotated[Session, Depends(get_db)],
-    user=Depends(get_current_user),
+    user=Depends(require_operator),
     # Typed as UUID so a malformed value is a 422 from FastAPI rather than a 500 when
     # SQLAlchemy tries to bind a plain string against the UUID column.
     department_id: uuid.UUID | None = Query(default=None),
@@ -157,7 +157,7 @@ def import_employees(
 
 
 @router.get("/employees/{employee_id}", response_model=EmployeeRead)
-def get_employee(employee_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)) -> EmployeeRead:
+def get_employee(employee_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)) -> EmployeeRead:
     employee = (
         db.query(Employee)
         .options(joinedload(Employee.department), joinedload(Employee.context_profiles))

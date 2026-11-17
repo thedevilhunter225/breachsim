@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_operator, require_roles
 from app.db.session import get_db
 from app.models.entities import PolicyVersion
 from app.models.enums import UserRole
@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 @router.get("/policies/current", response_model=PolicyRead)
-def get_policy(db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
+def get_policy(db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)):
     return get_or_create_policy(db, user.organization_id)
 
 

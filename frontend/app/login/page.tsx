@@ -1,12 +1,13 @@
 "use client";
 
-import { Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
+import { Copy, Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { BrandShield } from "@/components/brand-logo";
 import { useSession } from "@/components/session-provider";
+import { beginMfaSetupRequest, isMfaSetupRequired, type MfaSetup } from "@/lib/client-api";
 
 const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
@@ -19,6 +20,11 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [mfaOpen, setMfaOpen] = useState(false);
+  // Two-step setup, offered when the API says this account must enrol before signing in.
+  const [setupNeeded, setSetupNeeded] = useState(false);
+  const [setup, setSetup] = useState<MfaSetup | null>(null);
+  const [settingUp, setSettingUp] = useState(false);
 
   useEffect(() => {
     if (ready && session) router.replace("/dashboard");
@@ -32,9 +38,33 @@ export default function LoginPage() {
       await signIn(loginEmail, loginPassword, loginMfaCode);
       router.push("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to sign in");
+      if (isMfaSetupRequired(err)) {
+        setSetupNeeded(true);
+        // Once setup material has been issued, this refusal means the code did not match.
+        setError(setup ? "That code did not match. Enter the current 6-digit code from your authenticator app." : null);
+      } else {
+        const message = err instanceof Error ? err.message : "Unable to sign in";
+        setError(message);
+        // The account uses two-step sign-in: show the code field instead of leaving it collapsed.
+        if (/MFA code/i.test(message)) setMfaOpen(true);
+      }
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function startMfaSetup() {
+    if (!email || !password || settingUp) return;
+    setSettingUp(true);
+    setError(null);
+    try {
+      setSetup(await beginMfaSetupRequest(email, password));
+      setMfaCode("");
+      setMfaOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Two-step sign-in could not be set up");
+    } finally {
+      setSettingUp(false);
     }
   }
 
@@ -75,7 +105,12 @@ export default function LoginPage() {
                 autoComplete="username"
                 required
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  // Setup material belongs to one account, so a different email starts over.
+                  setSetupNeeded(false);
+                  setSetup(null);
+                }}
                 placeholder="name@company.com"
                 className="h-11 w-full rounded-lg border !border-[#d0d5dd] !bg-white px-3.5 text-[0.9rem] !text-[#101828] shadow-[0_1px_2px_rgba(16,24,40,0.04)] outline-none transition placeholder:!text-[#98a2b3] focus:!border-[#397dc4] focus:ring-[3px] focus:ring-[#397dc4]/10"
               />
@@ -108,7 +143,57 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <details className="group rounded-lg border border-[#e4e7ec] bg-[#fafbfc] px-3.5 py-2.5 open:pb-3.5">
+            {setupNeeded ? (
+              <section
+                aria-label="Two-step sign-in setup"
+                className="rounded-lg border border-[#b2ccff] bg-[#f5f8ff] px-3.5 py-3.5 text-[0.78rem] leading-5 text-[#1d3a6b]"
+              >
+                <div className="flex items-center gap-2 font-semibold text-[#174f88]">
+                  <ShieldCheck size={15} />
+                  Two-step sign-in is required
+                </div>
+                {setup ? (
+                  <>
+                    <p className="mt-2">
+                      Scan the code with an authenticator app, or type the setup key into it. Save the recovery codes
+                      somewhere safe: they are shown only once.
+                    </p>
+                    {setup.qr_image_data_url ? (
+                      <img
+                        src={setup.qr_image_data_url}
+                        alt="QR code to scan with your authenticator app"
+                        className="mx-auto mt-3 h-40 w-40 rounded-md border border-[#d0d5dd] bg-white p-1.5"
+                      />
+                    ) : null}
+                    <SetupSecret label="Setup key" value={setup.secret} />
+                    <SetupSecret label="Recovery codes" value={setup.recovery_codes.join("\n")} />
+                    <p className="mt-3">Then enter the 6-digit code from the app below and sign in.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-2">
+                      This account has to confirm each sign-in with an authenticator app. Setting it up takes about a
+                      minute.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void startMfaSetup()}
+                      disabled={settingUp}
+                      className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-md border border-[#174f88] bg-white text-[0.78rem] font-semibold text-[#174f88] transition hover:bg-[#eef4ff] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#397dc4]/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {settingUp ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
+                      Set up authenticator
+                    </button>
+                  </>
+                )}
+              </section>
+            ) : null}
+
+            <details
+              open={mfaOpen}
+              onToggle={(event) => setMfaOpen(event.currentTarget.open)}
+              className="group rounded-lg border border-[#e4e7ec] bg-[#fafbfc] px-3.5 py-2.5 open:pb-3.5"
+            >
               <summary className="cursor-pointer select-none text-[0.74rem] font-medium text-[#667085] marker:text-[#98a2b3]">
                 Use MFA or a recovery code
               </summary>
@@ -190,5 +275,26 @@ export default function LoginPage() {
         </nav>
       </div>
     </main>
+  );
+}
+
+function SetupSecret({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mt-3 rounded-md border border-[#d0d5dd] bg-white px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#667085]">{label}</span>
+        <button
+          type="button"
+          aria-label={`Copy ${label.toLowerCase()}`}
+          onClick={() => void navigator.clipboard.writeText(value)}
+          className="grid h-6 w-6 place-items-center rounded text-[#667085] transition hover:bg-[#f2f4f7] hover:text-[#101828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#397dc4]"
+        >
+          <Copy size={13} />
+        </button>
+      </div>
+      <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[0.74rem] leading-5 text-[#101828]">
+        {value}
+      </pre>
+    </div>
   );
 }

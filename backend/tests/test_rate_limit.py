@@ -45,13 +45,13 @@ class FakeRedis:
         self.expired = True
 
 
-def login_request() -> Request:
+def login_request(path: str = "/api/v1/auth/login", method: str = "POST") -> Request:
     return Request(
         {
             "type": "http",
-            "method": "POST",
-            "path": "/api/v1/auth/login",
-            "raw_path": b"/api/v1/auth/login",
+            "method": method,
+            "path": path,
+            "raw_path": path.encode(),
             "query_string": b"",
             "headers": [],
             "client": ("203.0.113.8", 40000),
@@ -87,3 +87,30 @@ def test_rate_limit_blocks_excess_and_fails_closed():
     middleware.redis = FakeRedis(current=1, broken=True)
     unavailable = asyncio.run(middleware.dispatch(login_request(), ok_response))
     assert unavailable.status_code == 503
+
+
+def test_throttling_can_be_switched_on_outside_production(monkeypatch):
+    # The test settings are a development environment, where the limiter is off by default.
+    assert RateLimitMiddleware(ok_response).enabled is False
+
+    monkeypatch.setattr(settings, "rate_limit_enabled", True)
+    assert RateLimitMiddleware(ok_response).enabled is True
+
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "rate_limit_enabled", False)
+    assert RateLimitMiddleware(ok_response).enabled is True, "production cannot switch it off"
+
+
+def test_mfa_setup_shares_the_sign_in_budget():
+    """Both routes check a password, so neither may be an unthrottled way to guess one."""
+    middleware = RateLimitMiddleware(ok_response)
+    middleware.enabled = True
+    setup = login_request("/api/v1/auth/mfa/setup")
+
+    assert middleware._limit_for(setup).scope == middleware._limit_for(login_request()).scope == "login"
+    assert middleware._identity(setup, "login") == middleware._identity(login_request(), "login")
+
+    middleware.redis = FakeRedis(current=settings.login_rate_limit_count + 1)
+    assert asyncio.run(middleware.dispatch(setup, ok_response)).status_code == 429
+    # Reading pages is never throttled.
+    assert middleware._limit_for(login_request("/api/v1/auth/me", method="GET")) is None

@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -13,6 +13,32 @@ from app.core.config import settings
 from app.models.entities import AccessLog, AuditLog
 
 GENESIS_HASH = "0" * 64
+
+
+def _as_utc(moment: datetime) -> datetime:
+    """SQLite returns naive values; they are stored in UTC."""
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def _latest_entry(db: Session, organization_id) -> AuditLog | None:
+    """The entry a new one links to: the tenant's newest, including any not yet flushed.
+
+    Sessions do not autoflush, so a query alone misses an entry added earlier in the same
+    transaction, and the new entry would branch off the one before it.
+    """
+    pending = [
+        row
+        for row in db.new
+        if isinstance(row, AuditLog) and row.entry_hash and str(row.organization_id) == str(organization_id)
+    ]
+    if pending:
+        return max(pending, key=lambda row: _as_utc(row.occurred_at))
+    return (
+        db.query(AuditLog)
+        .filter(AuditLog.organization_id == organization_id, AuditLog.entry_hash.is_not(None))
+        .order_by(AuditLog.occurred_at.desc(), AuditLog.id.desc())
+        .first()
+    )
 
 
 def _entry_hash(*, previous_hash: str, organization_id, user_id, action: str, resource_type: str, resource_id, details: dict, occurred_at: datetime) -> str:
@@ -50,14 +76,17 @@ def audit_log(
             text("SELECT pg_advisory_xact_lock(hashtext(:organization_id))"),
             {"organization_id": str(organization_id)},
         )
-    previous = (
-        db.query(AuditLog)
-        .filter(AuditLog.organization_id == organization_id, AuditLog.entry_hash.is_not(None))
-        .order_by(AuditLog.occurred_at.desc(), AuditLog.id.desc())
-        .first()
-    )
+    previous = _latest_entry(db, organization_id)
     previous_hash = previous.entry_hash if previous and previous.entry_hash else GENESIS_HASH
     occurred_at = datetime.now(timezone.utc)
+    if previous is not None and previous.occurred_at is not None:
+        # The chain is read back in timestamp order, so each entry must sort strictly after
+        # the one it links to. Without this, two entries can share a timestamp (the clock
+        # advances only every 15.6 ms on Windows with Python 3.12), and the verifier and the
+        # next writer may each take the pair in either order, reporting a sound chain broken.
+        last = _as_utc(previous.occurred_at)
+        if occurred_at <= last:
+            occurred_at = last + timedelta(microseconds=1)
     normalized_details = details or {}
     db.add(
         AuditLog(
@@ -100,7 +129,7 @@ def verify_audit_chain(db: Session, organization_id) -> dict[str, int | bool | s
             resource_type=row.resource_type,
             resource_id=row.resource_id,
             details=row.details,
-            occurred_at=row.occurred_at if row.occurred_at.tzinfo else row.occurred_at.replace(tzinfo=timezone.utc),
+            occurred_at=_as_utc(row.occurred_at),
         )
         if row.previous_hash != previous_hash or not hmac.compare_digest(row.entry_hash or "", expected):
             return {"valid": False, "entries": len(rows), "invalid_index": index, "invalid_entry_id": str(row.id)}

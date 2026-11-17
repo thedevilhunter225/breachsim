@@ -4,9 +4,10 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_operator, require_roles
 from app.db.session import get_db
 from app.models.entities import Employee, TrainingAssignment, TrainingModule
 from app.models.enums import UserRole
@@ -18,17 +19,30 @@ router = APIRouter()
 
 
 @router.get("/training/modules", response_model=list[TrainingModuleRead])
-def list_modules(db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
-    return db.query(TrainingModule).order_by(TrainingModule.title.asc()).all()
+def list_modules(db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)):
+    # A module belongs to one organization, or to none when it is shared platform content.
+    return (
+        db.query(TrainingModule)
+        .filter(or_(TrainingModule.organization_id == user.organization_id, TrainingModule.organization_id.is_(None)))
+        .order_by(TrainingModule.title.asc())
+        .all()
+    )
 
 
 @router.get("/training/assignments", response_model=list[TrainingAssignmentRead])
 def list_assignments(
     db: Annotated[Session, Depends(get_db)],
-    user=Depends(get_current_user),
-    employee_id: str | None = Query(default=None),
+    user=Depends(require_operator),
+    employee_id: uuid.UUID | None = Query(default=None),
 ) -> list[TrainingAssignment]:
-    query = db.query(TrainingAssignment).options(joinedload(TrainingAssignment.module))
+    # Assignments carry no organization column of their own, so the tenant boundary is
+    # the employee they belong to. Without this join every tenant's rows are returned.
+    query = (
+        db.query(TrainingAssignment)
+        .join(Employee, Employee.id == TrainingAssignment.employee_id)
+        .options(joinedload(TrainingAssignment.module))
+        .filter(Employee.organization_id == user.organization_id)
+    )
     if employee_id:
         query = query.filter(TrainingAssignment.employee_id == employee_id)
     return query.order_by(TrainingAssignment.created_at.desc()).all()

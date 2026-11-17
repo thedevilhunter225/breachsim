@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_operator, require_roles
 from app.db.session import get_db
 from app.models.entities import ImpersonationPersona
 from app.models.enums import UserRole
@@ -30,7 +30,7 @@ def serialize(persona: ImpersonationPersona) -> PersonaRead:
 
 
 @router.get("/personas", response_model=list[PersonaRead])
-def list_all(db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
+def list_all(db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)):
     return [serialize(persona) for persona in list_personas(db, user.organization_id)]
 
 
@@ -44,7 +44,7 @@ def create(
 
 
 @router.get("/personas/{persona_id}", response_model=PersonaRead)
-def read_one(persona_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
+def read_one(persona_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)):
     return serialize(get_persona(db, user.organization_id, persona_id))
 
 
