@@ -221,6 +221,9 @@ provider layer.
 | 10.11 | Production Compose stack with Caddy-managed HTTPS and private data network | Working |
 | 10.12 | Revocable JWT sessions and Redis-backed production rate limits | Working |
 | 10.13 | CI, dependency audits, lint, type checks and container builds | Working |
+| 10.14 | Sign-in throttling and mandatory admin MFA for any internet-facing instance (`RATE_LIMIT_ENABLED`, `REQUIRE_PRIVILEGED_MFA`), with authenticator setup at first sign-in | Working |
+| 10.15 | Platform operator role cannot be granted by a tenant (user API, SSO group mapping) | Working |
+| 10.16 | Tenant data readable by console roles only; exercise links hidden from read-only roles | Working |
 
 ---
 

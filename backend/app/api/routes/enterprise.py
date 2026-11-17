@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_roles
+from app.api.deps import is_platform_operator, require_roles
 from app.core.config import settings
 from app.core.crypto import blind_index
 from app.core.security import create_access_token, decode_access_token
@@ -802,6 +802,13 @@ def create_sso_connection(
     db: Annotated[Session, Depends(get_db)],
     user=Depends(require_roles(UserRole.ADMIN)),
 ):
+    if UserRole.PLATFORM_OPERATOR in payload.group_role_mappings.values() and not is_platform_operator(user):
+        # Same rule as the user API: a tenant cannot give itself cross-tenant access,
+        # here by pointing one of its own directory groups at the platform role.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a platform operator can map a group to the platform operator role",
+        )
     allowed_domains = sorted({domain.strip().casefold() for domain in payload.allowed_domains})
     if not allowed_domains:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="At least one SSO domain is required")

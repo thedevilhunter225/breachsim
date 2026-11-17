@@ -8,7 +8,7 @@ from redis.asyncio import Redis
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 
-from app.core.config import is_production_environment, settings
+from app.core.config import rate_limiting_enabled, settings
 
 
 @dataclass(frozen=True)
@@ -21,13 +21,18 @@ class Limit:
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Redis-backed limits for authentication and unauthenticated mutation routes.
 
-    Development and tests remain self-contained. Production fails closed if Redis is
-    unavailable so brute-force protection never disappears silently.
+    Development and tests remain self-contained. Production, and any other instance that
+    sets RATE_LIMIT_ENABLED, fails closed if Redis is unavailable so brute-force
+    protection never disappears silently.
     """
+
+    #: Both check a password, so they share one budget per client. Otherwise the MFA
+    #: setup route would be an unthrottled way to guess passwords.
+    PASSWORD_PATHS = frozenset({"/api/v1/auth/login", "/api/v1/auth/mfa/setup"})
 
     def __init__(self, app):
         super().__init__(app)
-        self.enabled = is_production_environment(settings.environment)
+        self.enabled = rate_limiting_enabled()
         self.redis = Redis.from_url(
             settings.redis_url,
             encoding="utf-8",
@@ -38,7 +43,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def _limit_for(self, request: Request) -> Limit | None:
         path = request.url.path
-        if path == "/api/v1/auth/login" and request.method == "POST":
+        if path in self.PASSWORD_PATHS and request.method == "POST":
             return Limit(
                 settings.login_rate_limit_count,
                 settings.login_rate_limit_window_seconds,

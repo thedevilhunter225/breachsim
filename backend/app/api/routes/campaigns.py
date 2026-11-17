@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import LAUNCH_ROLES, has_any_role, require_operator, require_roles
 from app.core.config import is_production_environment, settings
 from app.db.session import get_db
 from app.models.entities import (
@@ -30,12 +30,17 @@ from app.services.campaign_runs import (
     update_run_state,
 )
 from app.services.deletion import delete_campaign
-from app.services.delivery import deliver_campaign, deliver_campaign_email, launch_campaign_sandbox
+from app.services.delivery import (
+    deliver_campaign,
+    deliver_campaign_email,
+    launch_campaign_sandbox,
+    without_exercise_links,
+)
 
 router = APIRouter()
 
 
-def serialize_attempt(attempt: DeliveryAttempt, link_expires_at=None) -> DeliveryAttemptRead:
+def serialize_attempt(attempt: DeliveryAttempt, link_expires_at=None, *, include_links: bool = True) -> DeliveryAttemptRead:
     return DeliveryAttemptRead(
         id=str(attempt.id),
         campaign_id=str(attempt.campaign_id),
@@ -43,7 +48,7 @@ def serialize_attempt(attempt: DeliveryAttempt, link_expires_at=None) -> Deliver
         channel=attempt.channel,
         status=attempt.status,
         sandbox_mode=attempt.sandbox_mode,
-        preview_payload=attempt.preview_payload,
+        preview_payload=attempt.preview_payload if include_links else without_exercise_links(attempt.preview_payload),
         delivered_at=attempt.delivered_at,
         campaign_run_id=str(attempt.campaign_run_id) if attempt.campaign_run_id else None,
         provider_message_id=attempt.provider_message_id,
@@ -54,8 +59,14 @@ def serialize_attempt(attempt: DeliveryAttempt, link_expires_at=None) -> Deliver
     )
 
 
-def serialize_attempts(db: Session, attempts: list[DeliveryAttempt]) -> list[DeliveryAttemptRead]:
-    """Serialize attempts with their link expiry, loaded in one query."""
+def serialize_attempts(
+    db: Session, attempts: list[DeliveryAttempt], *, include_links: bool = True
+) -> list[DeliveryAttemptRead]:
+    """Serialize attempts with their link expiry, loaded in one query.
+
+    ``include_links`` is false for read-only roles: an exercise link lets its holder
+    answer, or opt out, as that employee, so only the roles that launch campaigns get it.
+    """
     ids = [attempt.id for attempt in attempts]
     expiry = (
         dict(
@@ -66,7 +77,7 @@ def serialize_attempts(db: Session, attempts: list[DeliveryAttempt]) -> list[Del
         if ids
         else {}
     )
-    return [serialize_attempt(attempt, expiry.get(attempt.id)) for attempt in attempts]
+    return [serialize_attempt(attempt, expiry.get(attempt.id), include_links=include_links) for attempt in attempts]
 
 
 def serialize_campaign(campaign: Campaign) -> CampaignRead:
@@ -93,7 +104,7 @@ def serialize_campaign(campaign: Campaign) -> CampaignRead:
 
 
 @router.get("/campaigns", response_model=list[CampaignRead])
-def list_campaigns(db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
+def list_campaigns(db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)):
     campaigns = (
         db.query(Campaign)
         .options(selectinload(Campaign.targets), selectinload(Campaign.scenario_links))
@@ -148,7 +159,7 @@ def create_campaign(
 
 
 @router.get("/campaigns/{campaign_id}", response_model=CampaignRead)
-def get_campaign(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
+def get_campaign(campaign_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)):
     campaign = db.query(Campaign).options(selectinload(Campaign.targets), selectinload(Campaign.scenario_links)).filter(Campaign.id == campaign_id, Campaign.organization_id == user.organization_id).first()
     if not campaign:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
@@ -266,7 +277,7 @@ def create_run(
 def list_runs(
     campaign_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],
-    user=Depends(get_current_user),
+    user=Depends(require_operator),
 ):
     campaign = db.query(Campaign).filter(
         Campaign.id == campaign_id,
@@ -293,7 +304,7 @@ def _tenant_run(db: Session, run_id: uuid.UUID, organization_id) -> CampaignRun:
 
 
 @router.get("/campaign-runs/{run_id}", response_model=CampaignRunRead)
-def get_run(run_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
+def get_run(run_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)):
     return _tenant_run(db, run_id, user.organization_id)
 
 
@@ -429,7 +440,7 @@ def delete(
 
 
 @router.get("/delivery-attempts", response_model=list[DeliveryAttemptRead])
-def list_delivery_attempts(db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
+def list_delivery_attempts(db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)):
     attempts = (
         db.query(DeliveryAttempt)
         .join(Campaign, DeliveryAttempt.campaign_id == Campaign.id)
@@ -437,4 +448,4 @@ def list_delivery_attempts(db: Annotated[Session, Depends(get_db)], user=Depends
         .order_by(DeliveryAttempt.created_at.desc())
         .all()
     )
-    return serialize_attempts(db, attempts)
+    return serialize_attempts(db, attempts, include_links=has_any_role(user, LAUNCH_ROLES))

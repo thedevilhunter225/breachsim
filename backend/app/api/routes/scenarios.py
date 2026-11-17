@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_operator, require_roles
 from app.db.session import get_db
 from app.models.entities import Scenario
 from app.models.enums import UserRole
@@ -38,7 +38,7 @@ def serialize_scenario(scenario: Scenario) -> ScenarioRead:
 
 
 @router.get("/scenarios", response_model=list[ScenarioRead])
-def list_scenarios(db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
+def list_scenarios(db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)):
     scenarios = (
         db.query(Scenario)
         .options(joinedload(Scenario.versions))
@@ -57,7 +57,7 @@ def generate(payload: ScenarioGenerateRequest, db: Annotated[Session, Depends(ge
 
 
 @router.get("/scenarios/{scenario_id}", response_model=ScenarioRead)
-def get_scenario(scenario_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)):
+def get_scenario(scenario_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)):
     scenario = (
         db.query(Scenario)
         .options(joinedload(Scenario.versions))

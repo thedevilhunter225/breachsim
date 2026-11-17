@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_operator, require_roles
 from app.db.session import get_db
 from app.models.entities import Department, Organization
 from app.models.enums import ReportingIdentityMode, UserRole
@@ -56,7 +56,7 @@ def update_current_org(
 
 
 @router.get("/departments", response_model=list[DepartmentRead])
-def list_departments(db: Annotated[Session, Depends(get_db)], user=Depends(get_current_user)) -> list[Department]:
+def list_departments(db: Annotated[Session, Depends(get_db)], user=Depends(require_operator)) -> list[Department]:
     return db.query(Department).filter(Department.organization_id == user.organization_id).order_by(Department.name.asc()).all()
 
 

@@ -24,6 +24,7 @@ boundary the organization fully controls.
 from __future__ import annotations
 
 import base64
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from html import escape
@@ -56,6 +57,43 @@ ENTRY_ROUTE_BY_CHANNEL = {
     Channel.VISHING: "call",
     Channel.DEEPFAKE: "impersonation",
 }
+
+#: Preview fields that hold, or encode, one employee's exercise link.
+EXERCISE_LINK_FIELDS = frozenset(
+    {
+        "preview_url",
+        "entry_url",
+        "session_url",
+        "scan_url",
+        "call_url",
+        "media_url",
+        "qr_payload_text",
+        "qr_image_data_url",
+    }
+)
+#: The same link when it is embedded in free text, such as the body of an SMS preview.
+_EXERCISE_LINK_IN_TEXT = re.compile(r"https?://[^\s\"'<>]+/(?:training|qr|call|impersonation|q|l)/[A-Za-z0-9_.\-]+")
+HIDDEN_LINK_PLACEHOLDER = "[link hidden]"
+
+
+def without_exercise_links(payload: dict | None) -> dict:
+    """The delivery preview for a read-only role: what was sent, minus the link.
+
+    An exercise link is a bearer credential for that employee. Whoever holds it can answer
+    the simulation in their name or use the self-service portal to opt them out, so only the
+    roles that launch campaigns receive it. Reviewers keep the wording of the message.
+    """
+
+    def scrub(value):
+        if isinstance(value, dict):
+            return {key: scrub(item) for key, item in value.items() if key not in EXERCISE_LINK_FIELDS}
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        if isinstance(value, str):
+            return _EXERCISE_LINK_IN_TEXT.sub(HIDDEN_LINK_PLACEHOLDER, value)
+        return value
+
+    return scrub(payload or {})
 
 
 # --------------------------------------------------------------------------------------

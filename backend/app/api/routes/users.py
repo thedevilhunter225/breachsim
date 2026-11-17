@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_role_names, require_roles
+from app.api.deps import get_role_names, is_platform_operator, require_roles
 from app.core.security import hash_password, password_is_strong
 from app.db.session import get_db
 from app.models.entities import AuthSession, Role, User, UserRoleLink
@@ -48,6 +48,33 @@ def _role_rows(db: Session, roles: list[UserRole]) -> list[Role]:
     return rows
 
 
+def _ensure_may_assign(actor: User, roles: list[UserRole]) -> None:
+    """Platform operator is a cross-tenant role, so a tenant administrator cannot hand it out.
+
+    It is created by the production bootstrap and only spreads from an existing operator.
+    Without this check any tenant admin could add the role to their own account and then
+    list, create or suspend other organizations.
+    """
+    if UserRole.PLATFORM_OPERATOR in roles and not is_platform_operator(actor):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a platform operator can grant the platform operator role",
+        )
+
+
+def _ensure_may_manage(actor: User, target: User) -> None:
+    """A platform operator account is changed only by another platform operator.
+
+    Otherwise an ordinary admin in the same organization could reset its password or
+    strip its roles and take over cross-tenant access indirectly.
+    """
+    if is_platform_operator(target) and not is_platform_operator(actor):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a platform operator can change a platform operator account",
+        )
+
+
 def _active_admin_count(db: Session, organization_id) -> int:
     return (
         db.query(User)
@@ -83,6 +110,7 @@ def create_user(
     db: Annotated[Session, Depends(get_db)],
     actor=Depends(require_roles(UserRole.ADMIN)),
 ):
+    _ensure_may_assign(actor, payload.roles)
     if not password_is_strong(payload.password):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -123,6 +151,9 @@ def update_user(
     actor=Depends(require_roles(UserRole.ADMIN)),
 ):
     user = _load_user(db, actor.organization_id, user_id)
+    _ensure_may_manage(actor, user)
+    if payload.roles is not None:
+        _ensure_may_assign(actor, payload.roles)
     current_roles = set(get_role_names(user))
     next_roles = set(role.value for role in payload.roles) if payload.roles is not None else current_roles
     next_active = payload.is_active if payload.is_active is not None else user.is_active
@@ -176,6 +207,7 @@ def reset_user_password(
             detail="Password must contain uppercase, lowercase, number, and symbol.",
         )
     user = _load_user(db, actor.organization_id, user_id)
+    _ensure_may_manage(actor, user)
     user.password_hash = hash_password(payload.new_password)
     now = datetime.now(timezone.utc)
     db.query(AuthSession).filter(

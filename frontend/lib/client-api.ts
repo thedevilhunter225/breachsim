@@ -470,6 +470,14 @@ export interface InvitationAcceptance {
   mfa_recovery_codes: string[];
 }
 
+/** What an authenticator app needs, issued once when two-step sign-in is set up. */
+export interface MfaSetup {
+  secret: string;
+  provisioning_uri: string;
+  recovery_codes: string[];
+  qr_image_data_url?: string | null;
+}
+
 export interface ChannelPerformance {
   channel: string;
   delivered: number;
@@ -609,6 +617,17 @@ export class ApiError extends Error {
 
 export const AUTH_EXPIRED_EVENT = "breachsim.auth_expired";
 
+/**
+ * True when sign-in was refused only because this account must use two-step sign-in
+ * and has not set it up yet. The API marks that case with a code so the login screen
+ * can offer the setup step instead of showing a dead-end error.
+ */
+export function isMfaSetupRequired(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 403) return false;
+  const detail = (error.payload as { detail?: unknown } | null)?.detail;
+  return Boolean(detail && typeof detail === "object" && (detail as { code?: unknown }).code === "mfa_setup_required");
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
   let payload: any = null;
@@ -711,6 +730,19 @@ export async function loginRequest(email: string, password: string, mfaCode?: st
     body: JSON.stringify({ email, password, mfa_code: mfaCode || null }),
   });
   return browserSession(payload);
+}
+
+/**
+ * Starts two-step sign-in setup for an account that is required to use it. There is no
+ * session yet, so the password identifies the operator, as it does for sign-in. Nothing
+ * is switched on until the next sign-in succeeds with a code from the authenticator.
+ */
+export function beginMfaSetupRequest(email: string, password: string) {
+  return request<MfaSetup>("/auth/mfa/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
 }
 
 export function acceptInvitationRequest(payload: { token: string; full_name: string; password: string }) {

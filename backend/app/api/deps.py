@@ -86,3 +86,21 @@ def require_roles(*roles: UserRole) -> Callable[[User], User]:
         return user
 
     return dependency
+
+
+#: Console roles that work with a tenant's campaign data. A signed-in employee, a
+#: standalone named-report viewer or a platform operator also holds a session, but none
+#: of them may read the directory, simulation content or other people's exercise links.
+OPERATOR_ROLES = (UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER, UserRole.AUDITOR)
+#: Roles that launch campaigns and therefore handle the per-employee exercise links.
+LAUNCH_ROLES = (UserRole.ADMIN, UserRole.CAMPAIGN_MANAGER)
+
+require_operator = require_roles(*OPERATOR_ROLES)
+
+
+def has_any_role(user: User, roles: tuple[UserRole, ...]) -> bool:
+    return bool(set(get_role_names(user)).intersection({role.value for role in roles}))
+
+
+def is_platform_operator(user: User) -> bool:
+    return has_any_role(user, (UserRole.PLATFORM_OPERATOR,))
